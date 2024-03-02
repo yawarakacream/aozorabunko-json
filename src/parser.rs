@@ -8,66 +8,69 @@ use crate::utility::Date;
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Author {
-    id: String,                  // 人物 ID
-    last_name: String,           // 姓
-    first_name: String,          // 名
-    last_name_kana: String,      // 姓読み
-    first_name_kana: String,     // 名読み
-    last_name_sort_key: String,  // 姓読みソート用
-    first_name_sort_key: String, // 名読みソート用
-    last_name_romaji: String,    // 姓ローマ字
-    first_name_romaji: String,   // 名ローマ字
+    pub id: usize,                   // 人物 ID
+    pub last_name: String,           // 姓
+    pub first_name: String,          // 名
+    pub last_name_kana: String,      // 姓読み
+    pub first_name_kana: String,     // 名読み
+    pub last_name_sort_key: String,  // 姓読みソート用
+    pub first_name_sort_key: String, // 名読みソート用
+    pub last_name_romaji: String,    // 姓ローマ字
+    pub first_name_romaji: String,   // 名ローマ字
 
-    birth_date: String, // 生年月日 (紀元前*世紀 のような表記があり Date は使えない)
-    death_date: String, // 没年月日
+    pub birth_date: String, // 生年月日 (紀元前*世紀 のような表記があり Date は使えない)
+    pub death_date: String, // 没年月日
 
-    copyright: bool, // 人物著作権フラグ
+    pub copyright: bool, // 人物著作権フラグ
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct BookAuthor {
-    book_id: String,
-    author_id: String,
-    author_role: String, // 役割フラグ
+    pub book_id: usize,
+    pub author_id: usize,
+    pub author_role: String, // 役割フラグ
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OriginalBook {
-    title: String,                // 底本名
-    publisher_name: String,       // 底本出版社名
-    first_edition_date: String,   // 底本初版発行年 (年 とあるが日付が入る)
-    input_edition: String,        // 入力に使用した版
-    proofreading_edition: String, // 校正に使用した版
+    pub title: String,                // 底本名
+    pub publisher_name: String,       // 底本出版社名
+    pub first_edition_date: String,   // 底本初版発行年 (年 とあるが日付が入る)
+    pub input_edition: String,        // 入力に使用した版
+    pub proofreading_edition: String, // 校正に使用した版
 
-    parent_title: String,              // 底本の親本名
-    parent_publisher_name: String,     // 底本の親本出版社
-    parent_first_edition_date: String, // 底本の親本初版発行年 (年 とあるが日付が入る)
+    pub parent_title: String,              // 底本の親本名
+    pub parent_publisher_name: String,     // 底本の親本出版社
+    pub parent_first_edition_date: String, // 底本の親本初版発行年 (年 とあるが日付が入る)
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Book {
-    id: String,             // 作品 ID
-    title: String,          // 作品名
-    title_kana: String,     // 作品名読み
-    sort_key: String,       // ソート用読み
-    subtitle: String,       // 副題
-    subtitle_kana: String,  // 副題読み
-    original_title: String, // 原題
+    pub id: usize,              // 作品 ID
+    pub title: String,          // 作品名
+    pub title_kana: String,     // 作品名読み
+    pub sort_key: String,       // ソート用読み
+    pub subtitle: String,       // 副題
+    pub subtitle_kana: String,  // 副題読み
+    pub original_title: String, // 原題
 
-    writing_system: String, // 文字遣い種別
+    pub writing_system: String, // 文字遣い種別
 
-    copyright: bool, // 作品著作権フラグ
+    pub copyright: bool, // 作品著作権フラグ
 
-    published_at: Date, // 公開日
-    updated_at: Date,   // 最終更新日
+    pub published_at: Date, // 公開日
+    pub updated_at: Date,   // 最終更新日
 
-    original_book: Vec<OriginalBook>, // 底本
+    pub original_book: Vec<OriginalBook>, // 底本
 
-    inputter_name: String,    // 入力者名
-    proofreader_name: String, // 校正者名
+    pub inputter_name: String,    // 入力者名
+    pub proofreader_name: String, // 校正者名
+
+    pub txt_url: Option<String>,  // テキストファイル URL
+    pub html_url: Option<String>, // XHTML / HTML ファイル URL
 }
 
 #[derive(Serialize)]
@@ -82,16 +85,8 @@ pub fn parse_index_list_extended(
 ) -> Result<AozorabunkoIndexList> {
     let mut reader = csv::Reader::from_reader(list_person_all_extended_csv.as_bytes());
 
-    // let mut records = Vec::<csv::StringRecord>::new();
-    // for (i, record) in reader.records().enumerate() {
-    //     let record: csv::StringRecord =
-    //         record.with_context(|| format!("Failed to parse record at {}", i))?;
-    //     records.push(record);
-    // }
-    // let records = records;
-
-    let mut authors = HashMap::<String, Author>::new();
-    let mut books = HashMap::<String, Book>::new();
+    let mut authors = HashMap::<usize, Author>::new();
+    let mut books = HashMap::<usize, Book>::new();
     let mut book_authors = HashSet::<BookAuthor>::new();
 
     for (i, record) in reader.records().enumerate() {
@@ -110,7 +105,7 @@ pub fn parse_index_list_extended(
             );
         }
 
-        authors.insert(author.id.clone(), author);
+        authors.insert(author.id, author);
 
         if let Some(existing_book) = books.get(&book.id) {
             ensure!(
@@ -121,7 +116,7 @@ pub fn parse_index_list_extended(
             );
         }
 
-        books.insert(book.id.clone(), book);
+        books.insert(book.id, book);
 
         ensure!(
             !book_authors.contains(&book_author),
@@ -145,7 +140,7 @@ pub fn parse_index_list_extended(
 fn parse_index_list_extended_record(
     record: &csv::StringRecord,
 ) -> Result<(Author, Book, BookAuthor)> {
-    let book_id = record[0].to_owned();
+    let book_id = record[0].parse().unwrap();
     let title = record[1].to_owned();
     let title_kana = record[2].to_owned();
     let sort_key = record[3].to_owned();
@@ -165,7 +160,7 @@ fn parse_index_list_extended_record(
     let updated_at = parse_date(&record[12])?;
 
     let author = {
-        let author_id = record[14].to_owned();
+        let author_id = record[14].parse().unwrap();
         let last_name = record[15].to_owned();
         let first_name = record[16].to_owned();
         let last_name_kana = record[17].to_owned();
@@ -235,6 +230,15 @@ fn parse_index_list_extended_record(
     let inputter_name = record[43].to_owned();
     let proofreader_name = record[44].to_owned();
 
+    let txt_url = match &record[45] {
+        x if x.is_empty() => None,
+        x => Some(x.to_owned()),
+    };
+    let html_url = match &record[50] {
+        x if x.is_empty() => None,
+        x => Some(x.to_owned()),
+    };
+
     let book = Book {
         id: book_id,
         title,
@@ -250,6 +254,8 @@ fn parse_index_list_extended_record(
         original_book,
         inputter_name,
         proofreader_name,
+        txt_url,
+        html_url,
     };
 
     let book_author = BookAuthor {

@@ -1,15 +1,21 @@
+pub mod book_file_parser;
 pub mod parser;
 pub mod utility;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
+use indicatif::{ProgressBar, ProgressIterator};
 use parser::parse_index_list_extended;
 use std::{
+    collections::HashSet,
     env,
     fs::{self, File},
-    io::Read,
     path::PathBuf,
 };
-use zip::ZipArchive;
+
+use crate::{
+    book_file_parser::parse_ruby_txt,
+    utility::{Date, ZipReader},
+};
 
 struct Args {
     aozorabunko_path: String,
@@ -43,6 +49,12 @@ fn main() -> Result<()> {
     let args = get_args()?;
 
     let aozorabunko_path = PathBuf::from(&args.aozorabunko_path);
+    ensure!(
+        aozorabunko_path.exists(),
+        "File not found: {}",
+        aozorabunko_path.display()
+    );
+
     let output_path = PathBuf::from(&args.output_path);
 
     // create output directory
@@ -60,23 +72,14 @@ fn main() -> Result<()> {
     println!("Processing list_person_all_extended...");
 
     let aozorabunko_index_list = {
-        let input_path = aozorabunko_path.join("index_pages/list_person_all_extended_utf8.zip");
+        let csv_zip_path = aozorabunko_path.join("index_pages/list_person_all_extended_utf8.zip");
+        let csv_zip_file = File::open(csv_zip_path).unwrap();
+        let mut csv_zip_reader = ZipReader::new(csv_zip_file)?;
 
-        let zip_file =
-            File::open(input_path).context("Failed to open list_person_all_extended_utf8.zip")?;
+        let mut csv_entry = csv_zip_reader.get_by_path("list_person_all_extended_utf8.csv")?;
+        let csv_data = csv_entry.as_string()?;
 
-        let mut zip_archive = ZipArchive::new(zip_file)
-            .context("Failed to read list_person_all_extended_utf8.zip")?;
-
-        let mut csv = zip_archive
-            .by_name("list_person_all_extended_utf8.csv")
-            .context("Failed to open list_person_all_extended_utf8.csv")?;
-
-        let mut list_person_all_extended_csv = String::new();
-        csv.read_to_string(&mut list_person_all_extended_csv)
-            .context("Failed to read list_person_all_extended_utf8.csv")?;
-
-        parse_index_list_extended(&list_person_all_extended_csv)?
+        parse_index_list_extended(&csv_data)?
     };
 
     fs::write(
@@ -93,6 +96,99 @@ fn main() -> Result<()> {
         &output_path.join("book_authors.json"),
         serde_json::to_string(&aozorabunko_index_list.book_authors)?,
     )?;
+
+    println!("Finished.");
+
+    let book_root_path = &output_path.join("book");
+
+    println!("Processing cards...");
+
+    // 人物著作権 が あり の著者の ID
+    let author_ids_with_copyright: HashSet<_> = aozorabunko_index_list
+        .authors
+        .iter()
+        .filter(|&a| a.copyright)
+        .map(|a| a.id)
+        .collect();
+
+    let bar = ProgressBar::new(aozorabunko_index_list.books.len() as u64);
+    for book in aozorabunko_index_list.books.iter().progress_with(bar) {
+        let book_directory_path = book_root_path.join(book.id.to_string());
+        fs::create_dir_all(&book_directory_path).unwrap();
+
+        let author_ids: Vec<usize> = aozorabunko_index_list
+            .book_authors
+            .iter()
+            .filter(|&ba| &ba.book_id == &book.id)
+            .map(|ba| ba.author_id)
+            .collect();
+
+        // 著作権確認
+        if book.copyright
+            || author_ids
+                .iter()
+                .any(|aid| author_ids_with_copyright.contains(aid))
+        {
+            continue;
+        }
+
+        // .txt
+        if let Some(txt_url) = &book.txt_url {
+            if !txt_url.starts_with("https://www.aozora.gr.jp/") {
+                continue;
+            }
+
+            (|| {
+                ensure!(&txt_url.ends_with("zip"), "Not zip file");
+
+                let txt_zip_path =
+                    aozorabunko_path.join(&txt_url["https://www.aozora.gr.jp/".len()..]);
+                let txt_zip_file = File::open(&txt_zip_path).unwrap();
+                let mut txt_zip_reader = ZipReader::new(txt_zip_file)?;
+
+                let mut txt_bytes = None;
+                for i in 0..txt_zip_reader.len() {
+                    let mut entry = txt_zip_reader.get_by_index(i).unwrap();
+                    if !entry.name().to_lowercase().ends_with(".txt") {
+                        continue;
+                    }
+
+                    ensure!(txt_bytes.is_none(), ".txt file exists more than 1");
+
+                    txt_bytes = Some(entry.as_bytes()?);
+                }
+
+                let txt_bytes = txt_bytes.context(".txt file is not found")?;
+                let txt = encoding_rs::SHIFT_JIS.decode(&txt_bytes).0.into_owned();
+
+                if txt_url.contains("ruby") {
+                    // 2010 年 4 月 1 日に公布されたフォーマットに従うパース
+                    static VALID_DATE: Date = Date::YMD {
+                        year: 2010,
+                        month: 4,
+                        date: 1,
+                    };
+                    match parse_ruby_txt(&txt) {
+                        Ok(content) => {
+                            fs::write(
+                                &book_directory_path.join("content_from_ruby-txt.json"),
+                                // serde_json::to_string(&content)?,
+                                serde_json::to_string_pretty(&content)?,
+                            )?;
+                        }
+                        Err(err) => {
+                            if book.published_at.is_equivalent_or_later(&VALID_DATE) {
+                                return Err(err);
+                            }
+                        }
+                    }
+                }
+
+                Ok(())
+            })()
+            .with_context(|| format!("Failed to process book text: {:?}", &book))?;
+        }
+    }
 
     println!("Finished.");
 
