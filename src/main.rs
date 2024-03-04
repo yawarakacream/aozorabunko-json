@@ -1,9 +1,11 @@
+pub mod accent_composer;
 pub mod book_file_parser;
+pub mod jis_x_0213;
 pub mod parser;
 pub mod utility;
 
 use anyhow::{bail, ensure, Context, Result};
-use indicatif::{ProgressBar, ProgressIterator};
+use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use parser::parse_index_list_extended;
 use std::{
     collections::HashSet,
@@ -111,8 +113,8 @@ fn main() -> Result<()> {
         .map(|a| a.id)
         .collect();
 
-    let bar = ProgressBar::new(aozorabunko_index_list.books.len() as u64);
-    for book in aozorabunko_index_list.books.iter().progress_with(bar) {
+    let pb = create_progress_bar(aozorabunko_index_list.books.len() as u64);
+    for book in aozorabunko_index_list.books.iter().progress_with(pb) {
         let book_directory_path = book_root_path.join(book.id.to_string());
         fs::create_dir_all(&book_directory_path).unwrap();
 
@@ -168,6 +170,7 @@ fn main() -> Result<()> {
                         month: 4,
                         date: 1,
                     };
+
                     match parse_ruby_txt(&txt) {
                         Ok(content) => {
                             fs::write(
@@ -180,6 +183,7 @@ fn main() -> Result<()> {
                             if book.published_at.is_equivalent_or_later(&VALID_DATE) {
                                 return Err(err);
                             }
+                            return Err(err); // tmp
                         }
                     }
                 }
@@ -193,4 +197,16 @@ fn main() -> Result<()> {
     println!("Finished.");
 
     Ok(())
+}
+
+fn create_progress_bar(len: u64) -> ProgressBar {
+    let pb = ProgressBar::new(len);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{percent:>3}% [{wide_bar:.cyan/blue}] {pos}/{len} [{elapsed_precise} < {eta_precise}]",
+        )
+        .unwrap()
+        .progress_chars("#-"),
+    );
+    pb
 }
