@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+// JIS X 0213 の (面, 区, 点): String
 pub static JIS_X_0213: Lazy<HashMap<(usize, usize, usize), String>> = Lazy::new(|| {
     let json = include_str!("JIS_X_0213.json/JIS_X_0213.json");
     let json: serde_json::Value = serde_json::from_str(json).unwrap();
