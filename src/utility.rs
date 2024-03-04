@@ -195,3 +195,20 @@ impl CharType {
         }
     }
 }
+
+pub fn parse_number(s: &[char]) -> Result<usize> {
+    let mut ret = 0;
+    for c in s {
+        let zero = match c {
+            '0'..='9' => '0',
+            '０'..='９' => '０',
+            _ => bail!("Failed to parse {:?}", s),
+        } as usize;
+
+        let d = (*c as usize) - zero;
+
+        ret *= 10;
+        ret += d;
+    }
+    Ok(ret)
+}
