@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 use zip::{read::ZipFile, ZipArchive};
 
@@ -155,4 +155,43 @@ pub fn trim_empty_lines(vec: &mut Vec<&str>) {
         j -= 1;
     }
     vec.drain(j..);
+}
+
+// 青空文庫に向けた文字種別
+// 仝々〆〇ヶ は漢字扱い (https://www.aozora.gr.jp/annotation/etc.html#ruby)
+#[derive(Debug, PartialEq, Eq)]
+pub enum CharType {
+    LatinAlphabet,
+    Hiragana,
+    Katakana,
+    Kanji,
+    Other,
+}
+
+impl CharType {
+    pub fn from(c: char) -> Self {
+        let u = c as u32;
+
+        if 0x0041 <= u && u <= 0x005a || 0x0061 <= u && u <= 0x007a {
+            // 小文字・大文字
+            Self::LatinAlphabet
+        } else if 0x00c0 <= u && u <= 0x00ff && u != 0x00d7 && u != 0x00f7 {
+            // アクセント記号付き
+            Self::LatinAlphabet
+        } else if 0x3040 <= u && u <= 0x309f {
+            Self::Hiragana
+        } else if 0x30a0 <= u && u <= 0x30ff {
+            Self::Katakana
+        } else if 0x4e00 <= u && u <= 0x9fff
+            || c == '仝'
+            || c == '々'
+            || c == '〆'
+            || c == '〇'
+            || c == 'ヶ'
+        {
+            Self::Kanji
+        } else {
+            Self::Other
+        }
+    }
 }
