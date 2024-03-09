@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::{
-    book_file_parser::parse_ruby_txt,
+    book_file_parser::{parse_ruby_txt, tokenize_ruby_txt},
     utility::{Date, ZipReader},
 };
 
@@ -171,26 +171,32 @@ fn main() -> Result<()> {
                         date: 1,
                     };
 
-                    match parse_ruby_txt(&txt) {
+                    let content = tokenize_ruby_txt(&txt).and_then(|x| parse_ruby_txt(&x));
+
+                    match content {
                         Ok(content) => {
                             fs::write(
                                 &book_directory_path.join("content_from_ruby-txt.json"),
-                                // serde_json::to_string(&content)?,
                                 serde_json::to_string_pretty(&content)?,
                             )?;
                         }
                         Err(err) => {
-                            if book.published_at.is_equivalent_or_later(&VALID_DATE) {
+                            if book.published_at.is_equivalent_or_later(&VALID_DATE)
+                                && book.updated_at.is_equivalent_or_later(&VALID_DATE)
+                            {
                                 return Err(err);
                             }
-                            return Err(err); // tmp
+                            println!(
+                                "[WARN] Failed to process book ruby-txt and ignored: {}, 「{}」",
+                                book.id, book.title
+                            );
                         }
                     }
                 }
 
                 Ok(())
             })()
-            .with_context(|| format!("Failed to process book text: {:?}", &book))?;
+            .with_context(|| format!("Failed to process book zip: {:?}", &book))?;
         }
     }
 
