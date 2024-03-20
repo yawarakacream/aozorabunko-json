@@ -1,57 +1,41 @@
+// 青空文庫 注記一覧 https://www.aozora.gr.jp/annotation/（2010 年 4 月 1 日公布）のフォーマットに従った解析
+//
+// フォーマットから外れたものは基本的にエラーとするが，一部フールプルーフする：
+// - 改行は公式に CR+LF とされているが完全には統一されていない
+// - "底本：" の "底本" と '：' の間に文字があってもよい
+// - 長いハイフンは "テキスト中に現れる記号について" を示すためとされているが
+//   単なる区切り？としての利用もある
+//   - (例) https://www.aozora.gr.jp/cards/000124/card652.html
+
 use anyhow::{bail, ensure, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::{accent_composer::compose_accent, utility::CharType};
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum BookContentOriginalDataType {
-    RubyTxt,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BookContent {
-    pub original_data_type: BookContentOriginalDataType,
-    pub header: Vec<BookContentElement>,
-    pub body: Vec<BookContentElement>,
-    pub footer: Vec<BookContentElement>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "type")]
-pub enum BookContentElement {
-    String { value: String, ruby: Option<String> },
-    NewLine,
-
-    KaipageAttention, // ［＃改ページ］
-}
-
-// 青空文庫 注記一覧 https://www.aozora.gr.jp/annotation/ のフォーマットに従った解析
-// 2010 年 4 月 1 日公布
-//
-// 公布日以降の作品の多くはこのフォーマットに従っている
-//
-// - 冒頭・末尾について規格が定められているが、昔のものはそれに沿っていない
-//   - (例) https://www.aozora.gr.jp/cards/000168/card909.html
-//     - 冒頭が "タイトル\n\n著者\n\n本文"
-//     - 末尾が "底本：" ではなく "入力者注"
-// - 長いハイフンは "テキスト中に現れる記号について" を示すためとされているが
-//   単なる区切り？としての利用もある
-//   - (例) https://www.aozora.gr.jp/cards/000124/card652.html
+use crate::{
+    book_content::{
+        BookContent, BookContentElement, BookContentElementList, BookContentOriginalDataType,
+    },
+    jis_x_0213,
+    utility::CharType,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type", content = "content")]
 pub enum RubyTxtToken {
     String(String),
+    Kunojiten { dakuten: bool },
     NewLine,
 
     PositionStartDelimiter, // ｜
 
     RubyStart, // 《
     RubyEnd,   // 》
+
+    AnnotationStart, // ［＃
+    AnnotationEnd,   // ］
+
+    GaijiAnnotationStart, // ※［＃
 
     GaijiAccentDecompositionStart, // 〔
     GaijiAccentDecompositionEnd,   // 〕
@@ -68,6 +52,15 @@ pub fn tokenize_ruby_txt(txt: &str) -> Result<Vec<RubyTxtToken>> {
     while !chars.is_empty() {
         let special_token = {
             match chars[0] {
+                '／' => match chars.get(1) {
+                    Some(&'＼') => Some((2, RubyTxtToken::Kunojiten { dakuten: false })),
+                    Some(&'″') => match chars.get(2) {
+                        Some(&'＼') => Some((3, RubyTxtToken::Kunojiten { dakuten: true })),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+
                 // 改行は公式に CR+LF とされているが完全には統一されていない
                 '\r' => match chars.get(1) {
                     Some(&'\n') => Some((2, RubyTxtToken::NewLine)),
@@ -78,6 +71,17 @@ pub fn tokenize_ruby_txt(txt: &str) -> Result<Vec<RubyTxtToken>> {
                 '｜' => Some((1, RubyTxtToken::PositionStartDelimiter)),
                 '《' => Some((1, RubyTxtToken::RubyStart)),
                 '》' => Some((1, RubyTxtToken::RubyEnd)),
+
+                '［' => match chars.get(1) {
+                    Some(&'＃') => Some((2, RubyTxtToken::AnnotationStart)),
+                    _ => None,
+                },
+                '］' => Some((1, RubyTxtToken::AnnotationEnd)),
+
+                '※' => match (chars.get(1), chars.get(2)) {
+                    (Some(&'［'), Some(&'＃')) => Some((3, RubyTxtToken::GaijiAnnotationStart)),
+                    _ => None,
+                },
 
                 '〔' => Some((1, RubyTxtToken::GaijiAccentDecompositionStart)),
                 '〕' => Some((1, RubyTxtToken::GaijiAccentDecompositionEnd)),
@@ -164,15 +168,9 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
     }
 
     let body = {
-        // 基本は "底本："
+        // "底本："
         static REGEX_FOOTER_CHECKER: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^底本()?[：:「]").unwrap());
-
-        // static REGEX_ANNOTATION_DESCRIPTION: Lazy<Regex> =
-        //     Lazy::new(|| Regex::new(r"^[\s　]*[【《]テキスト中に現れる記号について").unwrap());
-
-        static REGEX_ANNOTATION_DESCRIPTION: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^【テキスト中に現れる記号について】$").unwrap());
 
         let mut blocks = vec![vec![]];
         loop {
@@ -232,7 +230,7 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
 
             if let Some(RubyTxtToken::String(value)) = block.first() {
                 // 注記の説明のページは飛ばす
-                if REGEX_ANNOTATION_DESCRIPTION.is_match(&value) {
+                if value == "【テキスト中に現れる記号について】" {
                     continue;
                 }
             }
@@ -294,253 +292,336 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
     })
 }
 
-struct BookContentElementList {
-    elements: Vec<BookContentElement>,
-    string_buffer: String,
-}
-
-impl BookContentElementList {
-    pub fn new() -> Self {
-        BookContentElementList {
-            elements: Vec::new(),
-            string_buffer: String::new(),
-        }
-    }
-
-    // pub fn first(&mut self) -> Option<&BookContentElement> {
-    //     self.elements.first()
-    // }
-
-    // pub fn last(&mut self) -> Option<&BookContentElement> {
-    //     self.elements.last()
-    // }
-
-    pub fn pop(&mut self) -> Option<BookContentElement> {
-        self.elements.pop()
-    }
-
-    pub fn len(&self) -> usize {
-        self.elements.len()
-    }
-
-    pub fn push(&mut self, element: BookContentElement) {
-        self.apply_string_buffer();
-        self.elements.push(element);
-    }
-
-    pub fn push_char(&mut self, value: char) {
-        self.string_buffer.push(value)
-    }
-
-    pub fn push_str(&mut self, value: &str) {
-        self.string_buffer.push_str(&value);
-    }
-
-    pub fn apply_string_buffer(&mut self) {
-        if self.string_buffer.is_empty() {
-            return;
-        }
-
-        let string_buffer = self.string_buffer.clone();
-        self.elements.push(BookContentElement::String {
-            value: string_buffer,
-            ruby: None,
-        });
-
-        self.string_buffer.clear();
-    }
-
-    pub fn to_vec(mut self) -> Vec<BookContentElement> {
-        self.apply_string_buffer();
-        self.elements
-    }
-}
-
-impl<Idx> std::ops::Index<Idx> for BookContentElementList
-where
-    Idx: std::slice::SliceIndex<[BookContentElement], Output = BookContentElement>,
-{
-    type Output = BookContentElement;
-
-    #[inline(always)]
-    fn index(&self, index: Idx) -> &Self::Output {
-        self.elements.index(index)
-    }
-}
-
-// 構文解析（本文）
-fn parse_block(tokens: &[&RubyTxtToken]) -> Result<Vec<BookContentElement>> {
+// 構文解析
+fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<BookContentElement>> {
     let mut tokens = tokens;
     let mut elements = BookContentElementList::new();
 
-    // PositionStartDelimiter が挿入されていた所の次のトークンを指す
-    let mut position_start_delimiter_index = None;
-
     while !tokens.is_empty() {
-        let token0 = tokens[0];
-        tokens = &tokens[1..];
+        match tokens[0] {
+            RubyTxtToken::String(value) => {
+                tokens = &tokens[1..];
+                elements.push_str(value);
+            }
 
-        match token0 {
-            RubyTxtToken::String(value) => elements.push_str(value),
-            RubyTxtToken::NewLine => elements.push(BookContentElement::NewLine),
+            RubyTxtToken::Kunojiten { dakuten } => {
+                tokens = &tokens[1..];
+                elements.push_char(if *dakuten { '〲' } else { '〱' });
+            }
+
+            RubyTxtToken::NewLine => {
+                tokens = &tokens[1..];
+                elements.push(BookContentElement::NewLine);
+            }
 
             RubyTxtToken::PositionStartDelimiter => {
-                if position_start_delimiter_index.is_some() {
-                    bail!("Cannot write '｜' consecutively")
+                let parsed = parse_delimiter_and_tokens(tokens)?;
+                tokens = parsed.0;
+                match parsed.1 {
+                    ParsedDelimiterAndTokens::Element(element) => elements.push(element),
+                    ParsedDelimiterAndTokens::NotDelimiter => elements.push_char('｜'),
                 }
-                elements.apply_string_buffer();
-                position_start_delimiter_index = Some(elements.len() + 1);
             }
 
             RubyTxtToken::RubyStart => {
-                // ファイル最初 or 行頭の '《' はルビにしない方がいい？
+                // PositionStartDelimiter なしルビ
+                let ruby = parse_ruby(tokens)?;
+                tokens = ruby.0;
+                let ruby = ruby.1;
 
-                let mut end_index = None;
-                for (i, &token) in tokens.iter().enumerate() {
-                    match token {
-                        &RubyTxtToken::RubyEnd => {
-                            end_index = Some(i);
-                            break;
-                        }
-                        &RubyTxtToken::NewLine => break,
-                        _ => continue,
-                    }
+                // 空のルビはルビにせず "《》" を入れる
+                if ruby.is_empty() {
+                    elements.push_str("《》");
+                    continue;
                 }
-
-                let end_index = end_index.context("A line ends without '》'")?;
-
-                let ruby = {
-                    let child_tokens = &tokens[..end_index];
-                    let child_elements = parse_block(&child_tokens)?;
-
-                    // 中身のない "《》" はルビにしない
-                    if child_elements.is_empty() {
-                        elements.push_char('《');
-                        continue;
-                    }
-
-                    ensure!(
-                        child_elements.len() == 1,
-                        "Invalid ruby: {:?}",
-                        child_elements
-                    );
-
-                    match &child_elements[0] {
-                        BookContentElement::String {
-                            value: child_value,
-                            ruby: None,
-                        } => child_value.clone(),
-                        el => bail!("Invalid element is found in Ruby: {:?}", el),
-                    }
-                };
 
                 elements.apply_string_buffer();
 
-                // ルビを振る
-                match position_start_delimiter_index {
-                    Some(psd_index) => {
-                        ensure!(psd_index == elements.len(), "Invalid delimiter");
+                // 範囲を探索してルビを振る
+                match elements.pop().context("Cannod set ruby to None")? {
+                    BookContentElement::String { value, ruby: ruby0 } => {
+                        ensure!(!value.is_empty(), "Cannot set ruby to empty String");
+                        ensure!(ruby0.is_none(), "Cannot set 2 rubies to 1 String");
 
-                        match elements.pop().context("Cannot set ruby to None")? {
-                            BookContentElement::String { value, ruby: ruby0 } => {
-                                ensure!(!value.is_empty(), "Cannot set ruby to empty String");
-                                ensure!(ruby0.is_none(), "Cannot set 2 rubies to 1 String");
+                        let value_chars: Vec<_> = value.chars().collect();
 
-                                elements.push(BookContentElement::String {
-                                    value,
-                                    ruby: Some(ruby),
-                                });
+                        let mut ruby_start_index = value_chars.len();
+                        let last_char_type = CharType::from(*value_chars.last().unwrap());
+                        for c in value_chars.iter().rev() {
+                            if CharType::from(*c) != last_char_type {
+                                break;
                             }
-
-                            el => bail!("Cannot set ruby to {:?}", el),
+                            ruby_start_index -= 1;
                         }
 
-                        position_start_delimiter_index = None;
-                    }
-
-                    None => match elements.pop().context("Cannod set ruby to None")? {
-                        BookContentElement::String { value, ruby: ruby0 } => {
-                            ensure!(!value.is_empty(), "Cannot set ruby to empty String");
-                            ensure!(ruby0.is_none(), "Cannot set 2 rubies to 1 String");
-
-                            let value_chars: Vec<_> = value.chars().collect();
-
-                            let mut ruby_start_index = value_chars.len();
-                            let last_char_type = CharType::from(*value_chars.last().unwrap());
-                            for c in value_chars.iter().rev() {
-                                if CharType::from(*c) != last_char_type {
-                                    break;
-                                }
-                                ruby_start_index -= 1;
-                            }
-
-                            if 0 < ruby_start_index {
-                                elements.push(BookContentElement::String {
-                                    value: value_chars[..ruby_start_index].iter().collect(),
-                                    ruby: None,
-                                });
-                            }
+                        if 0 < ruby_start_index {
                             elements.push(BookContentElement::String {
-                                value: value_chars[ruby_start_index..].iter().collect(),
-                                ruby: Some(ruby),
+                                value: value_chars[..ruby_start_index].iter().collect(),
+                                ruby: None,
                             });
                         }
+                        elements.push(BookContentElement::String {
+                            value: value_chars[ruby_start_index..].iter().collect(),
+                            ruby: Some(ruby),
+                        });
+                    }
 
-                        el => bail!("Cannot set ruby to {:?}", el),
-                    },
+                    el => bail!("Cannot set ruby {:?} to {:?}", ruby, el),
                 }
-
-                tokens = &tokens[(end_index + 1)..];
             }
-            // 対応する '《' があったならここに来ないので '》' を入れる
-            RubyTxtToken::RubyEnd => elements.push_char('》'),
 
-            RubyTxtToken::GaijiAccentDecompositionStart => {
-                let mut end_index = None;
-                for (i, &token) in tokens.iter().enumerate() {
-                    match token {
-                        &RubyTxtToken::GaijiAccentDecompositionEnd => {
-                            end_index = Some(i);
-                            break;
-                        }
-                        &RubyTxtToken::NewLine => break,
-                        _ => continue,
-                    }
-                }
-
-                if let Some(end_index) = end_index {
-                    let child_tokens = &tokens[..end_index];
-                    let mut child_tokens: Vec<RubyTxtToken> =
-                        child_tokens.iter().map(|&t| t.clone()).collect();
-
-                    let mut composed = false;
-                    for i in 0..child_tokens.len() {
-                        if let RubyTxtToken::String(value) = &child_tokens[i] {
-                            let new_value = compose_accent(&value);
-                            if value != &new_value {
-                                composed = true;
-                                child_tokens[i] = RubyTxtToken::String(new_value);
-                            }
-                        }
-                    }
-
-                    // 合成したならば合成後のトークンで構文解析する
-                    if composed {
-                        let child_tokens = &child_tokens.iter().map(|t| t).collect::<Vec<_>>();
-                        let child_elements = parse_block(&child_tokens)?;
-                        child_elements.into_iter().for_each(|el| elements.push(el));
-                        tokens = &tokens[(end_index + 1)..];
-                        continue;
-                    }
-                }
-
-                // 対応する '〕' が見つからない or 見つかったがアクセント分解の合成を行わなかったならば '〔' を入れる
-                elements.push_char('〔');
+            RubyTxtToken::RubyEnd => {
+                // 対応する '《' があったならここに来ないので '》' を入れる
+                tokens = &tokens[1..];
+                elements.push_char('》');
             }
-            // 対応する '〔' があったならここに来ないので '〕' を入れる
-            RubyTxtToken::GaijiAccentDecompositionEnd => elements.push_char('〕'),
+
+            RubyTxtToken::GaijiAnnotationStart => {
+                let gaiji = parse_gaiji_annotation(tokens)?;
+                tokens = gaiji.0;
+                let gaiji = gaiji.1;
+                match gaiji {
+                    ParsedGaijiAnnotation::String(gaiji) => {
+                        elements.push_str(&gaiji);
+                    }
+                    ParsedGaijiAnnotation::Unknown(description) => {
+                        elements.push(BookContentElement::String {
+                            value: format!("※［{}］", description),
+                            ruby: None,
+                        });
+                    }
+                }
+            }
+
+            _ => {
+                // TODO
+                tokens = &tokens[1..];
+            }
         }
     }
 
-    Ok(elements.to_vec())
+    ensure!(tokens.is_empty());
+
+    Ok(elements.collect_to_vec())
+}
+
+// RubyStart ... RubyEnd
+fn parse_ruby<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<(&'a [&'a RubyTxtToken], String)> {
+    ensure!(matches!(tokens.get(0), Some(RubyTxtToken::RubyStart)));
+    let mut tokens = &tokens[1..];
+
+    let end_index = {
+        let mut end_index = None;
+        for (i, &token) in tokens.iter().enumerate() {
+            match token {
+                &RubyTxtToken::RubyEnd => {
+                    end_index = Some(i);
+                    break;
+                }
+                &RubyTxtToken::NewLine => break,
+                _ => continue,
+            }
+        }
+        end_index
+    }
+    .context("A line ends without '》'")?;
+
+    let child_tokens = &tokens[..end_index];
+    tokens = &tokens[(end_index + 1)..];
+
+    let child_elements = parse_block(&child_tokens)?;
+    if child_elements.is_empty() {
+        return Ok((tokens, "".to_owned()));
+    }
+    ensure!(
+        child_elements.len() == 1,
+        "Invalid ruby: {:?}",
+        child_elements
+    );
+
+    let ruby = match &child_elements[0] {
+        BookContentElement::String {
+            value: child_value,
+            ruby: None,
+        } => child_value.clone(),
+        el => bail!("Invalid element is found in Ruby: {:?}", el),
+    };
+
+    Ok((tokens, ruby))
+}
+
+enum ParsedGaijiAnnotation {
+    String(String),
+    Unknown(String),
+}
+
+// GaijiAnnotationStart String AnnotationEnd
+fn parse_gaiji_annotation<'a>(
+    tokens: &'a [&'a RubyTxtToken],
+) -> Result<(&'a [&'a RubyTxtToken], ParsedGaijiAnnotation)> {
+    ensure!(matches!(
+        tokens.get(0),
+        Some(RubyTxtToken::GaijiAnnotationStart)
+    ));
+
+    let tokens = &tokens[1..];
+
+    let end_index = {
+        let mut end_index = None;
+        let mut level = 0;
+        for (i, &token) in tokens.iter().enumerate() {
+            match token {
+                &RubyTxtToken::GaijiAnnotationStart => {
+                    level += 1;
+                }
+                &RubyTxtToken::AnnotationStart => {
+                    bail!("Cannot write Annotation in GaijiAnnotation");
+                }
+                &RubyTxtToken::AnnotationEnd => {
+                    if level == 0 {
+                        end_index = Some(i);
+                        break;
+                    }
+                    level -= 1;
+                }
+                &RubyTxtToken::NewLine => break,
+                _ => continue,
+            }
+        }
+        end_index
+    }
+    .context("A line ends without '］'")?;
+
+    let child_tokens = &tokens[..end_index];
+    let tokens = &tokens[(end_index + 1)..];
+
+    let child_elements = parse_block(&child_tokens)?;
+    ensure!(child_elements.len() == 1);
+
+    let annotation = match &child_elements[0] {
+        BookContentElement::String { value, ruby: None } => value,
+        t => bail!("Invalid gaiji annotation: {:?}", t),
+    };
+
+    // 変体仮名
+    static REGEX_HENTAIGANA: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^変体仮名(?P<kana>.).*$").unwrap());
+
+    if let Some(caps) = REGEX_HENTAIGANA.captures(&annotation) {
+        let kana = caps.name("kana").unwrap().as_str();
+        return Ok((tokens, ParsedGaijiAnnotation::String(kana.to_string())));
+    }
+
+    // 外字（第 1 第 2 水準にない漢字：第 3 第 4 水準にある & 特殊な仮名や記号など）
+    static REGEX_JIS: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^[^、]+、第[3-4]水準?(?P<plane>[0-9]+)-(?P<row>[0-9]+)-(?P<cell>[0-9]+)$")
+            .unwrap()
+    });
+
+    if let Some(caps) = REGEX_JIS.captures(&annotation) {
+        let plane = caps
+            .name("plane")
+            .unwrap()
+            .as_str()
+            .parse()
+            .context("Invalid plane")?;
+        let row = caps
+            .name("row")
+            .unwrap()
+            .as_str()
+            .parse()
+            .context("Invalid row")?;
+        let cell = caps
+            .name("cell")
+            .unwrap()
+            .as_str()
+            .parse()
+            .context("Invalid cell")?;
+        let char = jis_x_0213::JIS_X_0213
+            .get(&(plane, row, cell))
+            .with_context(|| format!("Unknown JIS code: {}-{}-{}", plane, row, cell))?;
+
+        return Ok((tokens, ParsedGaijiAnnotation::String(char.clone())));
+    }
+
+    // 外字（第 1 第 2 水準にない漢字：JIS X 0213 にないが Unicode にある，特殊な仮名や記号など）
+    static REGEX_UNICODE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^.+?、U\+(?P<unicode>[0-9A-Fa-f]+)、[0-9]+-[0-9]+$").unwrap());
+
+    if let Some(caps) = REGEX_UNICODE.captures(&annotation) {
+        let unicode = caps.name("unicode").unwrap().as_str();
+        let unicode = u32::from_str_radix(unicode, 16).context("Invalid unicode")?;
+        let char = char::from_u32(unicode).context("Invalid unicode")?;
+
+        return Ok((tokens, ParsedGaijiAnnotation::String(char.to_string())));
+    }
+
+    // TODO
+    Ok((tokens, ParsedGaijiAnnotation::Unknown(annotation.clone())))
+}
+
+enum ParsedDelimiterAndTokens {
+    NotDelimiter,
+    Element(BookContentElement),
+}
+
+// PositionStartDelimiter ... (RubyStart ... RubyEnd)
+fn parse_delimiter_and_tokens<'a>(
+    tokens: &'a [&'a RubyTxtToken],
+) -> Result<(&'a [&'a RubyTxtToken], ParsedDelimiterAndTokens)> {
+    ensure!(matches!(
+        tokens.get(0),
+        Some(RubyTxtToken::PositionStartDelimiter)
+    ));
+    let original_tokens = tokens;
+
+    let mut tokens = &tokens[1..];
+
+    let mut child_tokens = Vec::new();
+    while !tokens.is_empty() {
+        match tokens[0] {
+            RubyTxtToken::RubyStart => {
+                let value = parse_block(&child_tokens)?;
+                ensure!(
+                    value.len() == 1,
+                    "Invalid delimiter operands: {:?} ({:?})",
+                    value,
+                    child_tokens,
+                );
+                let value = match &value[0] {
+                    BookContentElement::String { value, ruby: None } => value,
+                    el => bail!("Cannot add ruby to invalid element: {:?}", el),
+                };
+
+                let ruby = parse_ruby(&tokens)?;
+                tokens = ruby.0;
+                let ruby = ruby.1;
+
+                return Ok((
+                    tokens,
+                    ParsedDelimiterAndTokens::Element(BookContentElement::String {
+                        value: value.clone(),
+                        ruby: Some(ruby),
+                    }),
+                ));
+            }
+
+            RubyTxtToken::NewLine => {
+                return Ok((
+                    &original_tokens[1..],
+                    ParsedDelimiterAndTokens::NotDelimiter,
+                ));
+            }
+
+            _ => {
+                child_tokens.push(tokens[0]);
+                tokens = &tokens[1..];
+            }
+        }
+    }
+
+    return Ok((
+        &original_tokens[1..],
+        ParsedDelimiterAndTokens::NotDelimiter,
+    ));
 }

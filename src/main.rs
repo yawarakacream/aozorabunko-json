@@ -1,4 +1,5 @@
 pub mod accent_composer;
+pub mod book_content;
 pub mod book_file_parser;
 pub mod jis_x_0213;
 pub mod parser;
@@ -115,6 +116,34 @@ fn main() -> Result<()> {
 
     let pb = create_progress_bar(aozorabunko_index_list.books.len() as u64);
     for book in aozorabunko_index_list.books.iter().progress_with(pb) {
+        if [
+            // "【テキスト中に現れる記号について】" が "《テキスト中に現れる記号について》" になっている
+            18379, // 楠山正雄「くらげのお使い」
+            45670, // 林不忘「魔像」
+            45664, // 福沢諭吉「旧藩情」
+            46228, // 林不忘「巷説享保図絵」
+            46229, // 林不忘「つづれ烏羽玉」
+            //
+            // 不明な書式
+            395, // 萩原朔太郎「散文詩集『田舎の時計　他十二篇』」
+            455, // 宮沢賢治「ガドルフの百合」
+            906, // 横光利一「時間」
+            909, // 横光利一「鳥」
+            //
+            // 細かいミス
+            2168,  // 與謝野寛、與謝野晶子「巴里より」　"一番向｜《むか》うにある"
+            24456, // 南方熊楠「棄老傳説に就て」　"底本・" が "底本・初出："
+            43035, // 岡本かの子「花は勁し」　"底本" が "定本" になっている
+            56634, // 梅崎春生「幻化」　"「もう一杯｜《く》呉れ」"
+            //
+            // その他
+            51729, // 「古事記」　不明な外字（"※［＃「討／貝」、406-2-9］"）
+        ]
+        .contains(&book.id)
+        {
+            continue;
+        }
+
         let book_directory_path = book_root_path.join(book.id.to_string());
         fs::create_dir_all(&book_directory_path).unwrap();
 
@@ -181,15 +210,16 @@ fn main() -> Result<()> {
                             )?;
                         }
                         Err(err) => {
-                            if book.published_at.is_equivalent_or_later(&VALID_DATE)
-                                && book.updated_at.is_equivalent_or_later(&VALID_DATE)
+                            if !book.published_at.is_equivalent_or_later(&VALID_DATE)
+                                | book.updated_at.is_equivalent_or_later(&VALID_DATE)
                             {
-                                return Err(err);
+                                println!(
+                                    "[WARN] Failed to process book ruby-txt and ignored: {}, 「{}」",
+                                    book.id, book.title
+                                );
+                                return Ok(());
                             }
-                            println!(
-                                "[WARN] Failed to process book ruby-txt and ignored: {}, 「{}」",
-                                book.id, book.title
-                            );
+                            return Err(err);
                         }
                     }
                 }
