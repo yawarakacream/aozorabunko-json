@@ -1,13 +1,12 @@
 pub mod accent_composer;
 pub mod book_content;
-pub mod book_file_parser;
+pub mod index_list_extended_parser;
 pub mod jis_x_0213;
-pub mod parser;
+pub mod ruby_txt_parser;
 pub mod utility;
 
 use anyhow::{bail, ensure, Context, Result};
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
-use parser::parse_index_list_extended;
 use std::{
     collections::HashSet,
     env,
@@ -16,7 +15,8 @@ use std::{
 };
 
 use crate::{
-    book_file_parser::{parse_ruby_txt, tokenize_ruby_txt},
+    index_list_extended_parser::parse_index_list_extended,
+    ruby_txt_parser::{parse_ruby_txt, tokenize_ruby_txt},
     utility::{Date, ZipReader},
 };
 
