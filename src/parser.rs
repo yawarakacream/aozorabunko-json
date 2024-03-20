@@ -126,9 +126,18 @@ pub fn parse_index_list_extended(
         book_authors.insert(book_author);
     }
 
-    let authors = authors.into_values().collect();
-    let books = books.into_values().collect();
-    let book_authors = book_authors.into_iter().collect();
+    let mut authors: Vec<_> = authors.into_values().collect();
+    authors.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut books: Vec<_> = books.into_values().collect();
+    books.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut book_authors: Vec<_> = book_authors.into_iter().collect();
+    book_authors.sort_by(|a, b| {
+        a.book_id
+            .cmp(&b.book_id)
+            .then(a.author_id.cmp(&b.author_id))
+    });
 
     Ok(AozorabunkoIndexList {
         authors,
