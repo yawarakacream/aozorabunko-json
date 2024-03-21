@@ -13,6 +13,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    accent_composer::compose_accent,
     book_content::{
         BookContent, BookContentElement, BookContentElementList, BookContentOriginalDataType,
     },
@@ -314,14 +315,16 @@ fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<BookContentElem
                 elements.push(BookContentElement::NewLine);
             }
 
-            RubyTxtToken::PositionStartDelimiter => {
-                let parsed = parse_delimiter_and_tokens(tokens)?;
-                tokens = parsed.0;
-                match parsed.1 {
-                    ParsedDelimiterAndTokens::Element(element) => elements.push(element),
-                    ParsedDelimiterAndTokens::NotDelimiter => elements.push_char('｜'),
+            RubyTxtToken::PositionStartDelimiter => match parse_delimiter_and_tokens(tokens)? {
+                ParsedDelimiterAndTokens::NotDelimiter => {
+                    tokens = &tokens[1..];
+                    elements.push_char('｜');
                 }
-            }
+                ParsedDelimiterAndTokens::Element(t, child) => {
+                    tokens = t;
+                    elements.push(child);
+                }
+            },
 
             RubyTxtToken::RubyStart => {
                 // PositionStartDelimiter なしルビ
@@ -391,6 +394,25 @@ fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<BookContentElem
                         });
                     }
                 }
+            }
+
+            RubyTxtToken::GaijiAccentDecompositionStart => {
+                match parse_gaiji_accent_decomposition(tokens)? {
+                    ParsedGaijiAccentDecomposition::NotAccentDecomposition => {
+                        tokens = &tokens[1..];
+                        elements.push_char('〔');
+                    }
+                    ParsedGaijiAccentDecomposition::Composed(t, children) => {
+                        tokens = t;
+                        elements.extend(children);
+                    }
+                }
+            }
+
+            RubyTxtToken::GaijiAccentDecompositionEnd => {
+                // 対応するアクセント分解があったならここに来ないので '〕' を入れる
+                tokens = &tokens[1..];
+                elements.push_char('〕');
             }
 
             _ => {
@@ -560,20 +582,19 @@ fn parse_gaiji_annotation<'a>(
     Ok((tokens, ParsedGaijiAnnotation::Unknown(annotation.clone())))
 }
 
-enum ParsedDelimiterAndTokens {
+enum ParsedDelimiterAndTokens<'a> {
     NotDelimiter,
-    Element(BookContentElement),
+    Element(&'a [&'a RubyTxtToken], BookContentElement),
 }
 
 // PositionStartDelimiter ... (RubyStart ... RubyEnd)
 fn parse_delimiter_and_tokens<'a>(
     tokens: &'a [&'a RubyTxtToken],
-) -> Result<(&'a [&'a RubyTxtToken], ParsedDelimiterAndTokens)> {
+) -> Result<ParsedDelimiterAndTokens<'a>> {
     ensure!(matches!(
         tokens.get(0),
         Some(RubyTxtToken::PositionStartDelimiter)
     ));
-    let original_tokens = tokens;
 
     let mut tokens = &tokens[1..];
 
@@ -597,20 +618,17 @@ fn parse_delimiter_and_tokens<'a>(
                 tokens = ruby.0;
                 let ruby = ruby.1;
 
-                return Ok((
+                return Ok(ParsedDelimiterAndTokens::Element(
                     tokens,
-                    ParsedDelimiterAndTokens::Element(BookContentElement::String {
+                    BookContentElement::String {
                         value: value.clone(),
                         ruby: Some(ruby),
-                    }),
+                    },
                 ));
             }
 
             RubyTxtToken::NewLine => {
-                return Ok((
-                    &original_tokens[1..],
-                    ParsedDelimiterAndTokens::NotDelimiter,
-                ));
+                return Ok(ParsedDelimiterAndTokens::NotDelimiter);
             }
 
             _ => {
@@ -620,8 +638,78 @@ fn parse_delimiter_and_tokens<'a>(
         }
     }
 
-    return Ok((
-        &original_tokens[1..],
-        ParsedDelimiterAndTokens::NotDelimiter,
+    Ok(ParsedDelimiterAndTokens::NotDelimiter)
+}
+
+enum ParsedGaijiAccentDecomposition<'a> {
+    NotAccentDecomposition,
+    Composed(&'a [&'a RubyTxtToken], Vec<BookContentElement>),
+}
+
+// GaijiAccentDecompositionStart String GaijiAccentDecompositionEnd
+fn parse_gaiji_accent_decomposition<'a>(
+    tokens: &'a [&'a RubyTxtToken],
+) -> Result<ParsedGaijiAccentDecomposition<'a>> {
+    ensure!(matches!(
+        tokens.get(0),
+        Some(RubyTxtToken::GaijiAccentDecompositionStart)
     ));
+
+    let tokens = &tokens[1..];
+
+    let mut processed_tokens = Vec::new();
+    let mut composed = false;
+
+    let end_index = {
+        let mut end_index = None;
+        let mut level = 0;
+        for (i, &token) in tokens.iter().enumerate() {
+            match token {
+                RubyTxtToken::GaijiAccentDecompositionStart => {
+                    level += 1;
+                }
+
+                RubyTxtToken::GaijiAccentDecompositionEnd => {
+                    if level == 0 {
+                        end_index = Some(i);
+                        break;
+                    }
+                    level -= 1;
+                }
+
+                RubyTxtToken::String(value) => {
+                    if level == 0 {
+                        let new_value = compose_accent(&value);
+                        if value != &new_value {
+                            composed = true;
+                            processed_tokens.push(RubyTxtToken::String(new_value));
+                            continue;
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+
+            processed_tokens.push(token.clone());
+        }
+        end_index
+    };
+
+    let end_index = match end_index {
+        Some(end_index) => end_index,
+        None => return Ok(ParsedGaijiAccentDecomposition::NotAccentDecomposition),
+    };
+
+    if !composed {
+        return Ok(ParsedGaijiAccentDecomposition::NotAccentDecomposition);
+    }
+
+    let processed_tokens = processed_tokens.iter().map(|t| t).collect::<Vec<_>>();
+    let child_elements = parse_block(&processed_tokens)?;
+
+    Ok(ParsedGaijiAccentDecomposition::Composed(
+        &tokens[(end_index + 1)..],
+        child_elements,
+    ))
 }
