@@ -536,7 +536,7 @@ fn parse_gaiji_annotation<'a>(
 
     // 外字（第 1 第 2 水準にない漢字：第 3 第 4 水準にある & 特殊な仮名や記号など）
     static REGEX_JIS: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"^[^、]+、第[3-4]水準?(?P<plane>[0-9]+)-(?P<row>[0-9]+)-(?P<cell>[0-9]+)$")
+        Regex::new(r"^[^、]+、(第[3-4]水準)?(?P<plane>[0-9]+)-(?P<row>[0-9]+)-(?P<cell>[0-9]+)$")
             .unwrap()
     });
 
@@ -559,11 +559,11 @@ fn parse_gaiji_annotation<'a>(
             .as_str()
             .parse()
             .context("Invalid cell")?;
-        let char = jis_x_0213::JIS_X_0213
-            .get(&(plane, row, cell))
-            .with_context(|| format!("Unknown JIS code: {}-{}-{}", plane, row, cell))?;
+        let char = jis_x_0213::JIS_X_0213.get(&(plane, row, cell));
 
-        return Ok((tokens, ParsedGaijiAnnotation::String(char.clone())));
+        if let Some(char) = char {
+            return Ok((tokens, ParsedGaijiAnnotation::String(char.clone())));
+        }
     }
 
     // 外字（第 1 第 2 水準にない漢字：JIS X 0213 にないが Unicode にある，特殊な仮名や記号など）
