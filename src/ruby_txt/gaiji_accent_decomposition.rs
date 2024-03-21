@@ -1,5 +1,85 @@
+use anyhow::{ensure, Result};
+
+use crate::{
+    book_content::BookContentElement,
+    ruby_txt::ruby_txt_parser::{parse_block, RubyTxtToken},
+};
+
+pub(super) enum ParsedGaijiAccentDecomposition<'a> {
+    NotAccentDecomposition,
+    Composed(&'a [&'a RubyTxtToken], Vec<BookContentElement>),
+}
+
+// GaijiAccentDecompositionStart String GaijiAccentDecompositionEnd
+pub(super) fn parse_gaiji_accent_decomposition<'a>(
+    tokens: &'a [&'a RubyTxtToken],
+) -> Result<ParsedGaijiAccentDecomposition<'a>> {
+    ensure!(matches!(
+        tokens.get(0),
+        Some(RubyTxtToken::GaijiAccentDecompositionStart)
+    ));
+
+    let tokens = &tokens[1..];
+
+    let mut processed_tokens = Vec::new();
+    let mut composed = false;
+
+    let end_index = {
+        let mut end_index = None;
+        let mut level = 0;
+        for (i, &token) in tokens.iter().enumerate() {
+            match token {
+                RubyTxtToken::GaijiAccentDecompositionStart => {
+                    level += 1;
+                }
+
+                RubyTxtToken::GaijiAccentDecompositionEnd => {
+                    if level == 0 {
+                        end_index = Some(i);
+                        break;
+                    }
+                    level -= 1;
+                }
+
+                RubyTxtToken::String(value) => {
+                    if level == 0 {
+                        let new_value = compose_accent(&value);
+                        if value != &new_value {
+                            composed = true;
+                            processed_tokens.push(RubyTxtToken::String(new_value));
+                            continue;
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+
+            processed_tokens.push(token.clone());
+        }
+        end_index
+    };
+
+    let end_index = match end_index {
+        Some(end_index) => end_index,
+        None => return Ok(ParsedGaijiAccentDecomposition::NotAccentDecomposition),
+    };
+
+    if !composed {
+        return Ok(ParsedGaijiAccentDecomposition::NotAccentDecomposition);
+    }
+
+    let processed_tokens = processed_tokens.iter().map(|t| t).collect::<Vec<_>>();
+    let child_elements = parse_block(&processed_tokens)?;
+
+    Ok(ParsedGaijiAccentDecomposition::Composed(
+        &tokens[(end_index + 1)..],
+        child_elements,
+    ))
+}
+
 // https://www.aozora.gr.jp/accent_separation.html
-pub fn compose_accent(s: &str) -> String {
+fn compose_accent(s: &str) -> String {
     let mut ret = String::new();
 
     let s: Vec<_> = s.chars().collect();

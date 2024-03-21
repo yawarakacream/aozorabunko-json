@@ -1,8 +1,7 @@
-pub mod accent_composer;
 pub mod book_content;
 pub mod index_list_extended_parser;
 pub mod jis_x_0213;
-pub mod ruby_txt_parser;
+pub mod ruby_txt;
 pub mod utility;
 
 use anyhow::{bail, ensure, Context, Result};
@@ -16,7 +15,7 @@ use std::{
 
 use crate::{
     index_list_extended_parser::parse_index_list_extended,
-    ruby_txt_parser::{parse_ruby_txt, tokenize_ruby_txt},
+    ruby_txt::ruby_txt_parser::{parse_ruby_txt, tokenize_ruby_txt},
     utility::{Date, ZipReader},
 };
 
