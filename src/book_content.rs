@@ -15,13 +15,37 @@ pub struct BookContent {
     pub footer: Vec<BookContentElement>,
 }
 
+pub mod book_content_element_util {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case", tag = "type")]
+    pub enum MidashiLevel {
+        Oh,   // 大見出し
+        Naka, // 中見出し
+        Ko,   // 小見出し
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case", tag = "type")]
+    pub enum MidashiStyle {
+        Normal, // ［＃中見出し］ 等
+        Dogyo,  // ［＃同行中見出し］ 等
+        Mado,   // ［＃窓中見出し］ 等
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub enum BookContentElement {
-    String { value: String },
+    String {
+        value: String,
+    },
     NewLine,
 
-    RubyStart { value: String },
+    RubyStart {
+        value: String,
+    },
     RubyEnd,
 
     KaichoAttention,      // ［＃改丁］
@@ -30,13 +54,22 @@ pub enum BookContentElement {
     KaidanAttention,      // ［＃改段］
 
     // ［＃○字下げ］ => { level: ○ }
-    JisageAnnotation { level: usize },
+    JisageAnnotation {
+        level: usize,
+    },
     // ［＃ここから○字下げ］ => { level: ○ }
-    JisageStartAnnotation { level: usize },
+    JisageStartAnnotation {
+        level: usize,
+    },
     // ［＃ここから○字下げ、折り返して●字下げ］ => { level0: ○, level1: ● }
-    JisageWithOrikaeshiStartAnnotation { level0: usize, level1: usize },
+    JisageWithOrikaeshiStartAnnotation {
+        level0: usize,
+        level1: usize,
+    },
     // ［＃ここから改行天付き、折り返して○字下げ］ => { level: ○ }
-    JisageAfterTentsukiStartAnnotation { level: usize },
+    JisageAfterTentsukiStartAnnotation {
+        level: usize,
+    },
     // ［＃ここで字下げ終わり］
     JisageEndAnnotation,
 
@@ -48,14 +81,33 @@ pub enum BookContentElement {
     JitsukiEndAnnotation,
 
     // ［＃地から○字上げ］
-    JiyoseAnnotation { level: usize },
+    JiyoseAnnotation {
+        level: usize,
+    },
     // ［＃ここから地から○字上げ］
-    JiyoseStartAnnotation { level: usize },
+    JiyoseStartAnnotation {
+        level: usize,
+    },
     // ［＃ここで字上げ終わり］
     JiyoseEndAnnotation,
 
     // ［＃ページの左右中央］
     PageCenterAnnotation,
+
+    // 見出し
+    Midashi {
+        value: String,
+        level: book_content_element_util::MidashiLevel,
+        style: book_content_element_util::MidashiStyle,
+    },
+    MidashiStart {
+        level: book_content_element_util::MidashiLevel,
+        style: book_content_element_util::MidashiStyle,
+    },
+    MidashiEnd {
+        level: book_content_element_util::MidashiLevel,
+        style: book_content_element_util::MidashiStyle,
+    },
 }
 
 pub struct BookContentElementList {

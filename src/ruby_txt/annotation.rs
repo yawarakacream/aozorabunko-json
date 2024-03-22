@@ -3,7 +3,10 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{
-    book_content::BookContentElement,
+    book_content::{
+        book_content_element_util::{MidashiLevel, MidashiStyle},
+        BookContentElement,
+    },
     ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
     utility::parse_number,
 };
@@ -152,6 +155,68 @@ pub(super) fn parse_annotation<'a>(
 
                 if arg == "ページの左右中央" {
                     return Ok(BookContentElement::PageCenterAnnotation);
+                }
+
+                static REGEX_MIDASHI: Lazy<Regex> = Lazy::new(|| {
+                    Regex::new(r"^「(?P<value>.+)」は(?P<style>.?.?)(?P<level>.)見出し$").unwrap()
+                });
+                if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
+                    let value = caps.name("value").unwrap().as_str().to_owned();
+                    let style = match caps.name("style").unwrap().as_str() {
+                        "" => MidashiStyle::Normal,
+                        "同行" => MidashiStyle::Dogyo,
+                        "窓" => MidashiStyle::Mado,
+                        x => bail!("Unknown midashi style: {:?}", x),
+                    };
+                    let level = match caps.name("level").unwrap().as_str() {
+                        "大" => MidashiLevel::Oh,
+                        "中" => MidashiLevel::Naka,
+                        "小" => MidashiLevel::Ko,
+                        x => bail!("Unknown midashi level: {:?}", x),
+                    };
+                    return Ok(BookContentElement::Midashi {
+                        value,
+                        style,
+                        level,
+                    });
+                }
+
+                static REGEX_MIDASHI_START: Lazy<Regex> = Lazy::new(|| {
+                    Regex::new(r"^(ここから)?(?P<style>.?.?)(?P<level>.)見出し$").unwrap()
+                });
+                if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
+                    let style = match caps.name("style").unwrap().as_str() {
+                        "" => MidashiStyle::Normal,
+                        "同行" => MidashiStyle::Dogyo,
+                        "窓" => MidashiStyle::Mado,
+                        x => bail!("Unknown midashi style: {:?}", x),
+                    };
+                    let level = match caps.name("level").unwrap().as_str() {
+                        "大" => MidashiLevel::Oh,
+                        "中" => MidashiLevel::Naka,
+                        "小" => MidashiLevel::Ko,
+                        x => bail!("Unknown midashi level: {:?}", x),
+                    };
+                    return Ok(BookContentElement::MidashiStart { level, style });
+                }
+
+                static REGEX_MIDASHI_END: Lazy<Regex> = Lazy::new(|| {
+                    Regex::new(r"^(ここで)?(?P<style>.?.?)(?P<level>.)見出し終わり$").unwrap()
+                });
+                if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
+                    let style = match caps.name("style").unwrap().as_str() {
+                        "" => MidashiStyle::Normal,
+                        "同行" => MidashiStyle::Dogyo,
+                        "窓" => MidashiStyle::Mado,
+                        x => bail!("Unknown midashi style: {:?}", x),
+                    };
+                    let level = match caps.name("level").unwrap().as_str() {
+                        "大" => MidashiLevel::Oh,
+                        "中" => MidashiLevel::Naka,
+                        "小" => MidashiLevel::Ko,
+                        x => bail!("Unknown midashi level: {:?}", x),
+                    };
+                    return Ok(BookContentElement::MidashiStart { level, style });
                 }
 
                 Ok(BookContentElement::String {
