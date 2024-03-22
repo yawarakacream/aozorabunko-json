@@ -89,5 +89,9 @@ pub fn tokenize_ruby_txt(txt: &str) -> Result<Vec<RubyTxtToken>> {
         }
     }
 
+    if !string_buffer.is_empty() {
+        tokens.push(RubyTxtToken::String(string_buffer));
+    }
+
     Ok(tokens)
 }
