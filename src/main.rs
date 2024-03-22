@@ -113,9 +113,18 @@ fn main() -> Result<()> {
         .map(|a| a.id)
         .collect();
 
+    // 著作権がある本の ID
+    let mut book_ids_with_copyright = HashSet::new();
+    for ba in aozorabunko_index_list.book_authors {
+        if author_ids_with_copyright.contains(&ba.author_id) {
+            book_ids_with_copyright.insert(ba.book_id);
+        }
+    }
+    let book_ids_with_copyright = book_ids_with_copyright;
+
     let pb = create_progress_bar(aozorabunko_index_list.books.len() as u64);
     for book in aozorabunko_index_list.books.iter().progress_with(pb) {
-        // テキストファイルにミスがあるもの
+        // テキストファイルにミスがあるものは飛ばす
         if [
             // "【テキスト中に現れる記号について】" が "《テキスト中に現れる記号について》" になっている
             18379, // 楠山正雄「くらげのお使い」
@@ -129,10 +138,15 @@ fn main() -> Result<()> {
             2526, // エドガー・アラン・ポー「早すぎる埋葬」　"底本「"
             //
             // 不明な書式
-            395, // 萩原朔太郎「散文詩集『田舎の時計　他十二篇』」
-            455, // 宮沢賢治「ガドルフの百合」
-            906, // 横光利一「時間」
-            909, // 横光利一「鳥」
+            395,   // 萩原朔太郎「散文詩集『田舎の時計　他十二篇』」
+            455,   // 宮沢賢治「ガドルフの百合」
+            906,   // 横光利一「時間」
+            909,   // 横光利一「鳥」
+            1255,  // 海野十三「海野十三敗戦日記」　謎 annotation
+            46237, // 宮本百合子「日記」『一九一七年（大正六年）』　謎 annotation
+            46241, // 宮本百合子「日記」『一九二二年（大正十一年）』　謎 annotation
+            46244, // 宮本百合子「日記」『一九二六年（大正十五年・昭和元年）』　謎 annotation
+            46247, // 宮本百合子「日記」『一九二九年（昭和四年）』　謎 annotation
             //
             // 細かいミス
             2168,  // 與謝野寛、與謝野晶子「巴里より」　"一番向｜《むか》うにある"
@@ -145,11 +159,8 @@ fn main() -> Result<()> {
             continue;
         }
 
-        // aozorabunko-json が未対応のもの
+        // aozorabunko-json が未対応のものは飛ばす
         if [
-            37,    // 芥川龍之介「戯作三昧」　返り点
-            38,    // 芥川龍之介「戯作三昧」　返り点
-            59,    // 芥川龍之介「邪宗門」　レ点
             51729, // 「古事記」　不明な外字（"※［＃「討／貝」、406-2-9］"）
         ]
         .contains(&book.id)
@@ -157,24 +168,13 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let book_directory_path = book_root_path.join(book.id.to_string());
-        fs::create_dir_all(&book_directory_path).unwrap();
-
-        let author_ids: Vec<usize> = aozorabunko_index_list
-            .book_authors
-            .iter()
-            .filter(|&ba| &ba.book_id == &book.id)
-            .map(|ba| ba.author_id)
-            .collect();
-
-        // 著作権確認
-        if book.copyright
-            || author_ids
-                .iter()
-                .any(|aid| author_ids_with_copyright.contains(aid))
-        {
+        // 著作権があるものは飛ばす
+        if book_ids_with_copyright.contains(&book.id) {
             continue;
         }
+
+        let book_directory_path = book_root_path.join(book.id.to_string());
+        fs::create_dir_all(&book_directory_path).unwrap();
 
         // .txt
         if let Some(txt_url) = &book.txt_url {
