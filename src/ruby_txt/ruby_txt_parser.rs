@@ -1,16 +1,6 @@
-// 青空文庫 注記一覧 https://www.aozora.gr.jp/annotation/（2010 年 4 月 1 日公布）のフォーマットに従った解析
-//
-// フォーマットから外れたものは基本的にエラーとするが，一部フールプルーフする：
-// - 改行は公式に CR+LF とされているが完全には統一されていない
-// - "底本：" の "底本" と '：' の間に文字があってもよい
-// - 長いハイフンは "テキスト中に現れる記号について" を示すためとされているが
-//   単なる区切り？としての利用もある
-//   - (例) https://www.aozora.gr.jp/cards/000124/card652.html
-
 use anyhow::{bail, ensure, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     book_content::{
@@ -23,100 +13,10 @@ use crate::{
         },
         gaiji_annotation::{parse_gaiji_annotation, ParsedGaijiAnnotation},
         ruby::parse_ruby,
+        ruby_txt_tokenizer::RubyTxtToken,
     },
     utility::CharType,
 };
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "type", content = "content")]
-pub enum RubyTxtToken {
-    String(String),
-    Kunojiten { dakuten: bool },
-    NewLine,
-
-    PositionStartDelimiter, // ｜
-
-    RubyStart, // 《
-    RubyEnd,   // 》
-
-    AnnotationStart, // ［＃
-    AnnotationEnd,   // ］
-
-    GaijiAnnotationStart, // ※［＃
-
-    GaijiAccentDecompositionStart, // 〔
-    GaijiAccentDecompositionEnd,   // 〕
-}
-
-// 字句解析
-pub fn tokenize_ruby_txt(txt: &str) -> Result<Vec<RubyTxtToken>> {
-    let mut tokens = Vec::new();
-
-    let mut chars: &[char] = &txt.chars().into_iter().collect::<Vec<_>>();
-
-    let mut string_buffer = String::new();
-
-    while !chars.is_empty() {
-        let special_token = {
-            match chars[0] {
-                '／' => match chars.get(1) {
-                    Some(&'＼') => Some((2, RubyTxtToken::Kunojiten { dakuten: false })),
-                    Some(&'″') => match chars.get(2) {
-                        Some(&'＼') => Some((3, RubyTxtToken::Kunojiten { dakuten: true })),
-                        _ => None,
-                    },
-                    _ => None,
-                },
-
-                // 改行は公式に CR+LF とされているが完全には統一されていない
-                '\r' => match chars.get(1) {
-                    Some(&'\n') => Some((2, RubyTxtToken::NewLine)),
-                    _ => Some((1, RubyTxtToken::NewLine)),
-                },
-                '\n' => Some((1, RubyTxtToken::NewLine)),
-
-                '｜' => Some((1, RubyTxtToken::PositionStartDelimiter)),
-                '《' => Some((1, RubyTxtToken::RubyStart)),
-                '》' => Some((1, RubyTxtToken::RubyEnd)),
-
-                '［' => match chars.get(1) {
-                    Some(&'＃') => Some((2, RubyTxtToken::AnnotationStart)),
-                    _ => None,
-                },
-                '］' => Some((1, RubyTxtToken::AnnotationEnd)),
-
-                '※' => match (chars.get(1), chars.get(2)) {
-                    (Some(&'［'), Some(&'＃')) => Some((3, RubyTxtToken::GaijiAnnotationStart)),
-                    _ => None,
-                },
-
-                '〔' => Some((1, RubyTxtToken::GaijiAccentDecompositionStart)),
-                '〕' => Some((1, RubyTxtToken::GaijiAccentDecompositionEnd)),
-
-                _ => None,
-            }
-        };
-
-        match special_token {
-            Some((len, token)) => {
-                if !string_buffer.is_empty() {
-                    tokens.push(RubyTxtToken::String(string_buffer));
-                    string_buffer = String::new();
-                }
-
-                tokens.push(token);
-                chars = &chars[len..];
-            }
-
-            None => {
-                string_buffer.push(chars[0]);
-                chars = &chars[1..];
-            }
-        }
-    }
-
-    Ok(tokens)
-}
 
 // 構文解析
 pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {

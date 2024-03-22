@@ -5,7 +5,7 @@ use regex::Regex;
 use crate::{
     book_content::BookContentElement,
     jis_x_0213,
-    ruby_txt::ruby_txt_parser::{parse_block, RubyTxtToken},
+    ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
 };
 
 pub(super) enum ParsedGaijiAnnotation {
