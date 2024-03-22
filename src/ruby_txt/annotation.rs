@@ -219,6 +219,63 @@ pub(super) fn parse_annotation<'a>(
                     return Ok(BookContentElement::MidashiStart { level, style });
                 }
 
+                static REGEX_KAERITEN: Lazy<Regex> = Lazy::new(|| {
+                    Regex::new(r"^(?P<ichini>一|二|三|四)?(?P<jouge>上|中|下)?(?P<kouotsu>甲|乙|丙|丁)?(?P<re>レ)?$").unwrap()
+                });
+                if let Some(caps) = REGEX_KAERITEN.captures(arg) {
+                    let ichini = match caps.name("ichini") {
+                        Some(ichini) => match ichini.as_str() {
+                            "一" => Some(0),
+                            "二" => Some(1),
+                            "三" => Some(2),
+                            "四" => Some(3),
+                            _ => panic!(),
+                        },
+                        None => None,
+                    };
+                    let jouge = match caps.name("jouge") {
+                        Some(jouge) => match jouge.as_str() {
+                            "上" => Some(0),
+                            "中" => Some(1),
+                            "下" => Some(2),
+                            _ => panic!(),
+                        },
+                        None => None,
+                    };
+                    let kouotsu = match caps.name("kouotsu") {
+                        Some(kouotsu) => match kouotsu.as_str() {
+                            "甲" => Some(0),
+                            "乙" => Some(1),
+                            "丙" => Some(2),
+                            "丁" => Some(3),
+                            _ => panic!(),
+                        },
+                        None => None,
+                    };
+                    let re = match caps.name("re") {
+                        Some(re) => match re.as_str() {
+                            "レ" => true,
+                            _ => panic!(),
+                        },
+                        None => false,
+                    };
+                    return Ok(BookContentElement::Kaeriten {
+                        ichini,
+                        jouge,
+                        kouotsu,
+                        re,
+                    });
+                }
+
+                static REGEX_KUNTEN_OKURIGANA: Lazy<Regex> =
+                    Lazy::new(|| Regex::new(r"^（(?P<kana>.+)）$").unwrap());
+                if let Some(caps) = REGEX_KUNTEN_OKURIGANA.captures(arg) {
+                    let kana = caps.name("kana").unwrap().as_str();
+                    return Ok(BookContentElement::KuntenOkurigana {
+                        value: kana.to_owned(),
+                    });
+                }
+
                 Ok(BookContentElement::String {
                     value: format!("[Unknown Annotation]({})", arg),
                 })

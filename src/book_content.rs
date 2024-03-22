@@ -108,6 +108,22 @@ pub enum BookContentElement {
         level: book_content_element_util::MidashiLevel,
         style: book_content_element_util::MidashiStyle,
     },
+
+    // 返り点
+    Kaeriten {
+        // 0:［＃一］, 1:［＃二］, 2:［＃三］, 3:［＃四］
+        ichini: Option<usize>,
+        // 0:［＃上］, 1:［＃中］, 2:［＃下］
+        jouge: Option<usize>,
+        // 0:［＃甲］, 1:［＃乙］, 2:［＃丙］, 3:［＃丁］
+        kouotsu: Option<usize>,
+        // false: なし, true:［＃レ］
+        re: bool,
+    },
+    // ［＃（○○）］
+    KuntenOkurigana {
+        value: String,
+    },
 }
 
 pub struct BookContentElementList {
