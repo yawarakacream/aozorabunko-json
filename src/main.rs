@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     index_list_extended_parser::parse_index_list_extended,
-    ruby_txt::ruby_txt_parser::{parse_ruby_txt, tokenize_ruby_txt},
+    ruby_txt::{ruby_txt_parser::parse_ruby_txt, ruby_txt_tokenizer::tokenize_ruby_txt},
     utility::{Date, ZipReader},
 };
 
@@ -115,6 +115,7 @@ fn main() -> Result<()> {
 
     let pb = create_progress_bar(aozorabunko_index_list.books.len() as u64);
     for book in aozorabunko_index_list.books.iter().progress_with(pb) {
+        // テキストファイルにミスがあるもの
         if [
             // "【テキスト中に現れる記号について】" が "《テキスト中に現れる記号について》" になっている
             18379, // 楠山正雄「くらげのお使い」
@@ -126,6 +127,7 @@ fn main() -> Result<()> {
             // 不明な書式
             395, // 萩原朔太郎「散文詩集『田舎の時計　他十二篇』」
             455, // 宮沢賢治「ガドルフの百合」
+            658, // 小熊秀雄「小熊秀雄全集-03」
             906, // 横光利一「時間」
             909, // 横光利一「鳥」
             //
@@ -134,8 +136,17 @@ fn main() -> Result<()> {
             24456, // 南方熊楠「棄老傳説に就て」　"底本・" が "底本・初出："
             43035, // 岡本かの子「花は勁し」　"底本" が "定本" になっている
             56634, // 梅崎春生「幻化」　"「もう一杯｜《く》呉れ」"
-            //
-            // その他
+        ]
+        .contains(&book.id)
+        {
+            continue;
+        }
+
+        // aozorabunko-json が未対応のもの
+        if [
+            37,    // 芥川龍之介「戯作三昧」　返り点
+            38,    // 芥川龍之介「戯作三昧」　返り点
+            59,    // 芥川龍之介「邪宗門」　レ点
             51729, // 「古事記」　不明な外字（"※［＃「討／貝」、406-2-9］"）
         ]
         .contains(&book.id)
