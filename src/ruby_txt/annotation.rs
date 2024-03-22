@@ -4,7 +4,7 @@ use regex::Regex;
 
 use crate::{
     book_content::{
-        book_content_element_util::{MidashiLevel, MidashiStyle},
+        book_content_element_util::{BoutenStyle, MidashiLevel, MidashiStyle},
         BookContentElement,
     },
     ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
@@ -204,18 +204,8 @@ pub(super) fn parse_annotation<'a>(
                     Regex::new(r"^(ここで)?(?P<style>.?.?)(?P<level>.)見出し終わり$").unwrap()
                 });
                 if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
-                    let style = match caps.name("style").unwrap().as_str() {
-                        "" => MidashiStyle::Normal,
-                        "同行" => MidashiStyle::Dogyo,
-                        "窓" => MidashiStyle::Mado,
-                        x => bail!("Unknown midashi style: {:?}", x),
-                    };
-                    let level = match caps.name("level").unwrap().as_str() {
-                        "大" => MidashiLevel::Oh,
-                        "中" => MidashiLevel::Naka,
-                        "小" => MidashiLevel::Ko,
-                        x => bail!("Unknown midashi level: {:?}", x),
-                    };
+                    let style = MidashiStyle::of(caps.name("style").unwrap().as_str())?;
+                    let level = MidashiLevel::of(caps.name("level").unwrap().as_str())?;
                     return Ok(BookContentElement::MidashiStart { level, style });
                 }
 
@@ -274,6 +264,54 @@ pub(super) fn parse_annotation<'a>(
                     return Ok(BookContentElement::KuntenOkurigana {
                         value: kana.to_owned(),
                     });
+                }
+
+                static REGEX_BOUTEN: Lazy<Regex> = Lazy::new(|| {
+                    Regex::new(r"^「(?P<target>.+)」(?P<left>の左)?に(?P<style>.*)傍点$").unwrap()
+                });
+                if let Some(caps) = REGEX_BOUTEN.captures(arg) {
+                    let target = caps.name("target").unwrap().as_str().to_owned();
+                    let style = BoutenStyle::of(caps.name("style").unwrap().as_str())?;
+                    let side = match caps.name("left") {
+                        Some(left) => {
+                            assert_eq!(left.as_str(), "の左");
+                            crate::book_content::book_content_element_util::BoutenSide::Left
+                        }
+                        None => crate::book_content::book_content_element_util::BoutenSide::Right,
+                    };
+                    return Ok(BookContentElement::Bouten {
+                        target,
+                        style,
+                        side,
+                    });
+                }
+
+                static REGEX_BOUTEN_START: Lazy<Regex> =
+                    Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*)傍点$").unwrap());
+                if let Some(caps) = REGEX_BOUTEN_START.captures(arg) {
+                    let style = BoutenStyle::of(caps.name("style").unwrap().as_str())?;
+                    let side = match caps.name("left") {
+                        Some(left) => {
+                            assert_eq!(left.as_str(), "左に");
+                            crate::book_content::book_content_element_util::BoutenSide::Left
+                        }
+                        None => crate::book_content::book_content_element_util::BoutenSide::Right,
+                    };
+                    return Ok(BookContentElement::BoutenStart { style, side });
+                }
+
+                static REGEX_BOUTEN_END: Lazy<Regex> =
+                    Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*)傍点終わり$").unwrap());
+                if let Some(caps) = REGEX_BOUTEN_END.captures(arg) {
+                    let style = BoutenStyle::of(caps.name("style").unwrap().as_str())?;
+                    let side = match caps.name("left") {
+                        Some(left) => {
+                            assert_eq!(left.as_str(), "左に");
+                            crate::book_content::book_content_element_util::BoutenSide::Left
+                        }
+                        None => crate::book_content::book_content_element_util::BoutenSide::Right,
+                    };
+                    return Ok(BookContentElement::BoutenEnd { style, side });
                 }
 
                 Ok(BookContentElement::String {

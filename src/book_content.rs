@@ -16,22 +16,81 @@ pub struct BookContent {
 }
 
 pub mod book_content_element_util {
+    use anyhow::{bail, Result};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
-    #[serde(rename_all = "kebab-case", tag = "type")]
+    #[serde(rename_all = "kebab-case")]
     pub enum MidashiLevel {
         Oh,   // 大見出し
         Naka, // 中見出し
         Ko,   // 小見出し
     }
+    impl MidashiLevel {
+        pub fn of(name: &str) -> Result<Self> {
+            match name {
+                "大" => Ok(Self::Oh),
+                "中" => Ok(Self::Naka),
+                "小" => Ok(Self::Ko),
+                name => bail!("Unknown midashi level: {}", name),
+            }
+        }
+    }
 
     #[derive(Debug, Serialize, Deserialize)]
-    #[serde(rename_all = "kebab-case", tag = "type")]
+    #[serde(rename_all = "kebab-case")]
     pub enum MidashiStyle {
         Normal, // ［＃中見出し］ 等
         Dogyo,  // ［＃同行中見出し］ 等
         Mado,   // ［＃窓中見出し］ 等
+    }
+    impl MidashiStyle {
+        pub fn of(name: &str) -> Result<Self> {
+            match name {
+                "" => Ok(Self::Normal),
+                "同行" => Ok(Self::Dogyo),
+                "窓" => Ok(Self::Mado),
+                name => bail!("Unknown midashi style: {}", name),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum BoutenStyle {
+        // 名前は https://www.aozora.gr.jp/annotation/emphasis.html#boten_chuki
+        SesameDot,
+        WhiteSesameDot,
+        BlackCircle,
+        WhiteCircle,
+        BlackUpPointingTriangle,
+        WhiteUpPointingTriangle,
+        Bullseye,
+        Fisheye,
+        Saltire,
+    }
+    impl BoutenStyle {
+        pub fn of(name: &str) -> Result<Self> {
+            match name {
+                "" => Ok(Self::SesameDot),
+                "白ゴマ" => Ok(Self::WhiteSesameDot),
+                "丸" => Ok(Self::BlackCircle),
+                "白丸" => Ok(Self::WhiteCircle),
+                "黒三角" => Ok(Self::BlackUpPointingTriangle),
+                "白三角" => Ok(Self::WhiteUpPointingTriangle),
+                "二重丸" => Ok(Self::Bullseye),
+                "蛇の目" => Ok(Self::Fisheye),
+                "ばつ" => Ok(Self::Saltire),
+                name => bail!("Unknown bouten style: {}", name),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum BoutenSide {
+        Left,
+        Right,
     }
 }
 
@@ -123,6 +182,21 @@ pub enum BookContentElement {
     // ［＃（○○）］
     KuntenOkurigana {
         value: String,
+    },
+
+    // 傍点
+    Bouten {
+        target: String,
+        style: book_content_element_util::BoutenStyle,
+        side: book_content_element_util::BoutenSide,
+    },
+    BoutenStart {
+        style: book_content_element_util::BoutenStyle,
+        side: book_content_element_util::BoutenSide,
+    },
+    BoutenEnd {
+        style: book_content_element_util::BoutenStyle,
+        side: book_content_element_util::BoutenSide,
     },
 }
 
