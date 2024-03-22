@@ -7,6 +7,7 @@ use crate::{
         BookContent, BookContentElement, BookContentElementList, BookContentOriginalDataType,
     },
     ruby_txt::{
+        annotation::parse_annotation,
         delimiter_and_tokens::{parse_delimiter_and_tokens, ParsedDelimiterAndTokens},
         gaiji_accent_decomposition::{
             parse_gaiji_accent_decomposition, ParsedGaijiAccentDecomposition,
@@ -65,12 +66,18 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
 
     let body = {
         // "底本："
-        static REGEX_FOOTER_CHECKER: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^底本()?[：:「]").unwrap());
+        static REGEX_FOOTER_CHECKER: Lazy<Regex> = Lazy::new(|| Regex::new(r"^底本[：:]").unwrap());
 
         let mut blocks = vec![vec![]];
         loop {
             let token = tokens.get(0).context("Failed to load body")?;
+
+            if let RubyTxtToken::String(string) = token {
+                if REGEX_FOOTER_CHECKER.is_match(&string) {
+                    break;
+                }
+            }
+
             tokens = &tokens[1..];
 
             if let RubyTxtToken::String(string) = token {
@@ -83,10 +90,6 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
                         blocks.push(vec![]);
                     }
                     continue;
-                }
-
-                if REGEX_FOOTER_CHECKER.is_match(&string) {
-                    break;
                 }
             }
 
@@ -177,7 +180,6 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
     })
 }
 
-// 構文解析
 pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<BookContentElement>> {
     let mut tokens = tokens;
     let mut elements = BookContentElementList::new();
@@ -262,6 +264,18 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
                 elements.push_char('》');
             }
 
+            RubyTxtToken::AnnotationStart => {
+                let parsed = parse_annotation(tokens)?;
+                tokens = parsed.0;
+                elements.push(parsed.1);
+            }
+
+            RubyTxtToken::AnnotationEnd => {
+                // 対応する annotation があったならここに来ないので '］' を入れる
+                tokens = &tokens[1..];
+                elements.push_char('］');
+            }
+
             RubyTxtToken::GaijiAnnotationStart => {
                 let gaiji = parse_gaiji_annotation(tokens)?;
                 tokens = gaiji.0;
@@ -296,11 +310,6 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
                 // 対応するアクセント分解があったならここに来ないので '〕' を入れる
                 tokens = &tokens[1..];
                 elements.push_char('〕');
-            }
-
-            _ => {
-                // TODO
-                tokens = &tokens[1..];
             }
         }
     }

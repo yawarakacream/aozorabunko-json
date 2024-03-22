@@ -24,7 +24,38 @@ pub enum BookContentElement {
     RubyStart { value: String },
     RubyEnd,
 
-    KaipageAttention, // ［＃改ページ］
+    KaichoAttention,      // ［＃改丁］
+    KaipageAttention,     // ［＃改ページ］
+    KaimihirakiAttention, // ［＃改見開き］
+    KaidanAttention,      // ［＃改段］
+
+    // ［＃○字下げ］ => { level: ○ }
+    JisageAnnotation { level: usize },
+    // ［＃ここから○字下げ］ => { level: ○ }
+    JisageStartAnnotation { level: usize },
+    // ［＃ここから○字下げ、折り返して●字下げ］ => { level0: ○, level1: ● }
+    JisageWithOrikaeshiStartAnnotation { level0: usize, level1: usize },
+    // ［＃ここから改行天付き、折り返して○字下げ］ => { level: ○ }
+    JisageAfterTentsukiStartAnnotation { level: usize },
+    // ［＃ここで字下げ終わり］
+    JisageEndAnnotation,
+
+    // ［＃地付き］
+    JitsukiAnnotation,
+    // ［＃ここから地付き］
+    JitsukiStartAnnotation,
+    // ［＃ここで地付き終わり］
+    JitsukiEndAnnotation,
+
+    // ［＃地から○字上げ］
+    JiyoseAnnotation { level: usize },
+    // ［＃ここから地から○字上げ］
+    JiyoseStartAnnotation { level: usize },
+    // ［＃ここで字上げ終わり］
+    JiyoseEndAnnotation,
+
+    // ［＃ページの左右中央］
+    PageCenterAnnotation,
 }
 
 pub struct BookContentElementList {
