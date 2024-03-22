@@ -198,6 +198,11 @@ pub enum BookContentElement {
         style: book_content_element_util::BoutenStyle,
         side: book_content_element_util::BoutenSide,
     },
+
+    // ［＃割り注］
+    WarichuStart,
+    // ［＃割り注終わり］
+    WarichuEnd,
 }
 
 pub struct BookContentElementList {
