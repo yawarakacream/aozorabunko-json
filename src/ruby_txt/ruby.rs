@@ -10,7 +10,7 @@ pub(super) fn parse_ruby<'a>(
     tokens: &'a [&'a RubyTxtToken],
 ) -> Result<(&'a [&'a RubyTxtToken], String)> {
     ensure!(matches!(tokens.get(0), Some(RubyTxtToken::RubyStart)));
-    let mut tokens = &tokens[1..];
+    let tokens = &tokens[1..];
 
     let end_index = {
         let mut end_index = None;
@@ -29,7 +29,7 @@ pub(super) fn parse_ruby<'a>(
     .context("A line ends without '》'")?;
 
     let child_tokens = &tokens[..end_index];
-    tokens = &tokens[(end_index + 1)..];
+    let tokens = &tokens[(end_index + 1)..];
 
     let child_elements = parse_block(&child_tokens)?;
     if child_elements.is_empty() {
@@ -42,10 +42,7 @@ pub(super) fn parse_ruby<'a>(
     );
 
     let ruby = match &child_elements[0] {
-        BookContentElement::String {
-            value: child_value,
-            ruby: None,
-        } => child_value.clone(),
+        BookContentElement::String { value: child_value } => child_value.clone(),
         el => bail!("Invalid element is found in Ruby: {:?}", el),
     };
 

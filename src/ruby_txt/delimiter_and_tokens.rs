@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{ensure, Result};
 
 use crate::{
     book_content::BookContentElement,
@@ -10,7 +10,7 @@ use crate::{
 
 pub(super) enum ParsedDelimiterAndTokens<'a> {
     NotDelimiter,
-    Element(&'a [&'a RubyTxtToken], BookContentElement),
+    Element(&'a [&'a RubyTxtToken], Vec<BookContentElement>),
 }
 
 // PositionStartDelimiter ... (RubyStart ... RubyEnd)
@@ -21,36 +21,21 @@ pub(super) fn parse_delimiter_and_tokens<'a>(
         tokens.get(0),
         Some(RubyTxtToken::PositionStartDelimiter)
     ));
-
     let mut tokens = &tokens[1..];
 
     let mut child_tokens = Vec::new();
     while !tokens.is_empty() {
         match tokens[0] {
             RubyTxtToken::RubyStart => {
-                let value = parse_block(&child_tokens)?;
-                ensure!(
-                    value.len() == 1,
-                    "Invalid delimiter operands: {:?} ({:?})",
-                    value,
-                    child_tokens,
-                );
-                let value = match &value[0] {
-                    BookContentElement::String { value, ruby: None } => value,
-                    el => bail!("Cannot add ruby to invalid element: {:?}", el),
-                };
-
                 let ruby = parse_ruby(&tokens)?;
                 tokens = ruby.0;
                 let ruby = ruby.1;
 
-                return Ok(ParsedDelimiterAndTokens::Element(
-                    tokens,
-                    BookContentElement::String {
-                        value: value.clone(),
-                        ruby: Some(ruby),
-                    },
-                ));
+                let mut child_elements = parse_block(&child_tokens)?;
+                child_elements.insert(0, BookContentElement::RubyStart { value: ruby });
+                child_elements.push(BookContentElement::RubyEnd);
+
+                return Ok(ParsedDelimiterAndTokens::Element(tokens, child_elements));
             }
 
             RubyTxtToken::NewLine => {

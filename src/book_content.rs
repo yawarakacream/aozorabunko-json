@@ -18,8 +18,11 @@ pub struct BookContent {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub enum BookContentElement {
-    String { value: String, ruby: Option<String> },
+    String { value: String },
     NewLine,
+
+    RubyStart { value: String },
+    RubyEnd,
 
     KaipageAttention, // ［＃改ページ］
 }
@@ -74,7 +77,7 @@ impl BookContentElementList {
 
     pub fn extend(&mut self, elements: Vec<BookContentElement>) {
         for el in elements {
-            if let BookContentElement::String { value, ruby: None } = el {
+            if let BookContentElement::String { value } = el {
                 self.push_str(&value);
             } else {
                 self.push(el);
@@ -96,7 +99,6 @@ impl BookContentElementList {
 
         self.push(BookContentElement::String {
             value: string_buffer,
-            ruby: None,
         });
     }
 
@@ -110,16 +112,10 @@ impl BookContentElementList {
         // String を纏める
         let mut items = Vec::new();
         for item in self.items {
-            if let BookContentElement::String { value, ruby } = &item.element {
-                if let Some(BookContentElement::String {
-                    value: last_value,
-                    ruby: last_ruby,
-                }) = items.last_mut()
-                {
-                    if ruby.is_none() && last_ruby.is_none() {
-                        last_value.push_str(&value);
-                        continue;
-                    }
+            if let BookContentElement::String { value } = &item.element {
+                if let Some(BookContentElement::String { value: last_value }) = items.last_mut() {
+                    last_value.push_str(&value);
+                    continue;
                 }
             }
 

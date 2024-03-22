@@ -21,7 +21,6 @@ pub(super) fn parse_gaiji_annotation<'a>(
         tokens.get(0),
         Some(RubyTxtToken::GaijiAnnotationStart)
     ));
-
     let tokens = &tokens[1..];
 
     let end_index = {
@@ -54,10 +53,14 @@ pub(super) fn parse_gaiji_annotation<'a>(
     let tokens = &tokens[(end_index + 1)..];
 
     let child_elements = parse_block(&child_tokens)?;
-    ensure!(child_elements.len() == 1);
+    ensure!(
+        child_elements.len() == 1,
+        "Invalid gaiji annotation: {:?}",
+        child_elements
+    );
 
     let annotation = match &child_elements[0] {
-        BookContentElement::String { value, ruby: None } => value,
+        BookContentElement::String { value } => value,
         t => bail!("Invalid gaiji annotation: {:?}", t),
     };
 

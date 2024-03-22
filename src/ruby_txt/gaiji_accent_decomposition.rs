@@ -18,7 +18,6 @@ pub(super) fn parse_gaiji_accent_decomposition<'a>(
         tokens.get(0),
         Some(RubyTxtToken::GaijiAccentDecompositionStart)
     ));
-
     let tokens = &tokens[1..];
 
     let mut processed_tokens = Vec::new();

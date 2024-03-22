@@ -155,17 +155,6 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
         }
         ensure!(!elements.is_empty(), "Header is empty");
 
-        for el in &elements {
-            ensure!(
-                matches!(
-                    el,
-                    BookContentElement::String { value: _, ruby: _ } | BookContentElement::NewLine
-                ),
-                "Invalid element is found in header: {:?}",
-                el
-            );
-        }
-
         elements
     };
 
@@ -277,17 +266,6 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<BookContent> {
         }
         ensure!(!elements.is_empty(), "Footer is empty");
 
-        for el in &elements {
-            ensure!(
-                matches!(
-                    el,
-                    BookContentElement::String { value: _, ruby: _ } | BookContentElement::NewLine
-                ),
-                "Invalid element is found in footer: {:?}",
-                el
-            );
-        }
-
         elements
     };
 
@@ -326,9 +304,9 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
                     tokens = &tokens[1..];
                     elements.push_char('｜');
                 }
-                ParsedDelimiterAndTokens::Element(t, child) => {
+                ParsedDelimiterAndTokens::Element(t, children) => {
                     tokens = t;
-                    elements.push(child);
+                    elements.extend(children);
                 }
             },
 
@@ -348,9 +326,8 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
 
                 // 範囲を探索してルビを振る
                 match elements.pop().context("Cannod set ruby to None")? {
-                    BookContentElement::String { value, ruby: ruby0 } => {
+                    BookContentElement::String { value } => {
                         ensure!(!value.is_empty(), "Cannot set ruby to empty String");
-                        ensure!(ruby0.is_none(), "Cannot set 2 rubies to 1 String");
 
                         let value_chars: Vec<_> = value.chars().collect();
 
@@ -366,13 +343,13 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
                         if 0 < ruby_start_index {
                             elements.push(BookContentElement::String {
                                 value: value_chars[..ruby_start_index].iter().collect(),
-                                ruby: None,
                             });
                         }
+                        elements.push(BookContentElement::RubyStart { value: ruby });
                         elements.push(BookContentElement::String {
                             value: value_chars[ruby_start_index..].iter().collect(),
-                            ruby: Some(ruby),
                         });
+                        elements.push(BookContentElement::RubyEnd);
                     }
 
                     el => bail!("Cannot set ruby {:?} to {:?}", ruby, el),
@@ -394,9 +371,9 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
                         elements.push_str(&gaiji);
                     }
                     ParsedGaijiAnnotation::Unknown(description) => {
+                        // TODO
                         elements.push(BookContentElement::String {
                             value: format!("※［{}］", description),
-                            ruby: None,
                         });
                     }
                 }
