@@ -16,7 +16,7 @@ use std::{
 use crate::{
     index_list_extended_parser::parse_index_list_extended,
     ruby_txt::{ruby_txt_parser::parse_ruby_txt, ruby_txt_tokenizer::tokenize_ruby_txt},
-    utility::{Date, ZipReader},
+    utility::ZipReader,
 };
 
 struct Args {
@@ -206,35 +206,11 @@ fn main() -> Result<()> {
                 let txt = encoding_rs::SHIFT_JIS.decode(&txt_bytes).0.into_owned();
 
                 if txt_url.contains("ruby") {
-                    // 2010 年 4 月 1 日に公布されたフォーマットに従うパース
-                    static VALID_DATE: Date = Date::YMD {
-                        year: 2010,
-                        month: 4,
-                        date: 1,
-                    };
-
-                    let content = tokenize_ruby_txt(&txt).and_then(|x| parse_ruby_txt(&x));
-
-                    match content {
-                        Ok(content) => {
-                            fs::write(
-                                &book_directory_path.join("content_from_ruby-txt.json"),
-                                serde_json::to_string_pretty(&content)?,
-                            )?;
-                        }
-                        Err(err) => {
-                            if !book.published_at.is_equivalent_or_later(&VALID_DATE)
-                                | book.updated_at.is_equivalent_or_later(&VALID_DATE)
-                            {
-                                println!(
-                                    "[WARN] Failed to process book ruby-txt and ignored: {}, 「{}」",
-                                    book.id, book.title
-                                );
-                                return Ok(());
-                            }
-                            return Err(err);
-                        }
-                    }
+                    let content = tokenize_ruby_txt(&txt).and_then(|x| parse_ruby_txt(&x))?;
+                    fs::write(
+                        &book_directory_path.join("content_from_ruby-txt.json"),
+                        serde_json::to_string_pretty(&content)?,
+                    )?;
                 }
 
                 Ok(())
