@@ -22,6 +22,30 @@ pub enum RubyTxtToken {
     GaijiAccentDecompositionEnd,   // 〕
 }
 
+impl RubyTxtToken {
+    pub(crate) fn to_str(&self) -> &str {
+        match &self {
+            RubyTxtToken::String(string) => string,
+            RubyTxtToken::Kunojiten { dakuten } => {
+                if *dakuten {
+                    "／″＼"
+                } else {
+                    "／＼"
+                }
+            }
+            RubyTxtToken::NewLine => "<newline>",
+            RubyTxtToken::PositionMarker => "｜",
+            RubyTxtToken::RubyStart => "《",
+            RubyTxtToken::RubyEnd => "》",
+            RubyTxtToken::AnnotationStart => "［＃",
+            RubyTxtToken::AnnotationEnd => "］",
+            RubyTxtToken::GaijiAnnotationStart => "※［＃",
+            RubyTxtToken::GaijiAccentDecompositionStart => "〔",
+            RubyTxtToken::GaijiAccentDecompositionEnd => "〕",
+        }
+    }
+}
+
 // 字句解析
 pub fn tokenize_ruby_txt(txt: &str) -> Result<Vec<RubyTxtToken>> {
     let mut tokens = Vec::new();
