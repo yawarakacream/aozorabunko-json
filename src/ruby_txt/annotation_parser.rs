@@ -5,14 +5,12 @@ use regex::Regex;
 use crate::{
     ruby_txt::{
         block_parser::parse_block,
-        parser_helper::{
-            parsed_ruby_txt_element_util::{
-                BouDecorationSide, BouDecorationStyle, MidashiLevel, MidashiStyle,
-                StringDecorationStyle,
-            },
-            ParsedRubyTxtElement,
-        },
+        parser::ParsedRubyTxtElement,
         tokenizer::RubyTxtToken,
+        utility::{
+            BouDecorationSide, BouDecorationStyle, MidashiLevel, MidashiStyle,
+            StringDecorationStyle,
+        },
     },
     utility::parse_number,
 };

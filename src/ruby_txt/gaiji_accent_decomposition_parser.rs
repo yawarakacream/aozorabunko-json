@@ -1,7 +1,7 @@
 use anyhow::{ensure, Result};
 
 use crate::{
-    ruby_txt::parser_helper::ParsedRubyTxtElement,
+    ruby_txt::parser::ParsedRubyTxtElement,
     ruby_txt::{block_parser::parse_block, tokenizer::RubyTxtToken},
 };
 

@@ -4,9 +4,7 @@ use regex::Regex;
 
 use crate::{
     jis_x_0213,
-    ruby_txt::{
-        block_parser::parse_block, parser_helper::ParsedRubyTxtElement, tokenizer::RubyTxtToken,
-    },
+    ruby_txt::{block_parser::parse_block, parser::ParsedRubyTxtElement, tokenizer::RubyTxtToken},
 };
 
 pub(super) enum ParsedGaijiAnnotation {

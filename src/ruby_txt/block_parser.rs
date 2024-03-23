@@ -1,18 +1,15 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{ensure, Result};
 
-use crate::{
-    ruby_txt::{
-        annotation_parser::parse_annotation,
-        delimiter_and_tokens_parser::{parse_delimiter_and_tokens, ParsedDelimiterAndTokens},
-        gaiji_accent_decomposition_parser::{
-            parse_gaiji_accent_decomposition, ParsedGaijiAccentDecomposition,
-        },
-        gaiji_annotation_parser::{parse_gaiji_annotation, ParsedGaijiAnnotation},
-        parser_helper::{ParsedRubyTxtElement, ParsedRubyTxtElementList},
-        ruby_parser::parse_ruby,
-        tokenizer::RubyTxtToken,
+use crate::ruby_txt::{
+    annotation_parser::parse_annotation,
+    gaiji_accent_decomposition_parser::{
+        parse_gaiji_accent_decomposition, ParsedGaijiAccentDecomposition,
     },
-    utility::CharType,
+    gaiji_annotation_parser::{parse_gaiji_annotation, ParsedGaijiAnnotation},
+    parser::ParsedRubyTxtElement,
+    parser_helper::ParsedRubyTxtElementList,
+    ruby_parser::parse_ruby,
+    tokenizer::RubyTxtToken,
 };
 
 pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<ParsedRubyTxtElement>> {
@@ -36,68 +33,22 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Pars
                 elements.push(ParsedRubyTxtElement::NewLine);
             }
 
-            RubyTxtToken::PositionStartDelimiter => match parse_delimiter_and_tokens(tokens)? {
-                ParsedDelimiterAndTokens::NotDelimiter => {
-                    tokens = &tokens[1..];
-                    elements.push_char('｜');
-                }
-                ParsedDelimiterAndTokens::Element(t, children) => {
-                    tokens = t;
-                    elements.extend(children);
-                }
-            },
+            RubyTxtToken::PositionMarker => {
+                tokens = &tokens[1..];
+                elements.push(ParsedRubyTxtElement::PositionMarker);
+            }
 
             RubyTxtToken::RubyStart => {
                 // PositionStartDelimiter なしルビ
                 let ruby = parse_ruby(tokens)?;
+
                 tokens = ruby.0;
-                let ruby = ruby.1;
 
-                // 空のルビはルビにせず "《》" を入れる
-                if ruby.is_empty() {
+                if ruby.1.is_empty() {
+                    // 空のルビはルビにせず "《》" を入れる
                     elements.push_str("《》");
-                    continue;
-                }
-
-                elements.apply_string_buffer();
-
-                // 範囲を探索してルビを振る
-                let mut passed = Vec::new();
-                loop {
-                    match elements.pop().context("Cannod find String to set ruby")? {
-                        ParsedRubyTxtElement::String { value } => {
-                            ensure!(!value.is_empty(), "Cannot set ruby to empty String");
-
-                            let value_chars: Vec<_> = value.chars().collect();
-
-                            let mut ruby_start_index = value_chars.len();
-                            let last_char_type = CharType::from(*value_chars.last().unwrap());
-                            for c in value_chars.iter().rev() {
-                                if CharType::from(*c) != last_char_type {
-                                    break;
-                                }
-                                ruby_start_index -= 1;
-                            }
-
-                            if 0 < ruby_start_index {
-                                elements.push(ParsedRubyTxtElement::String {
-                                    value: value_chars[..ruby_start_index].iter().collect(),
-                                });
-                            }
-                            elements.push(ParsedRubyTxtElement::RubyStart { value: ruby });
-                            elements.push(ParsedRubyTxtElement::String {
-                                value: value_chars[ruby_start_index..].iter().collect(),
-                            });
-                            elements.push(ParsedRubyTxtElement::RubyEnd);
-                            while let Some(el) = passed.pop() {
-                                elements.push(el);
-                            }
-
-                            break;
-                        }
-
-                        el => passed.push(el),
-                    }
+                } else {
+                    elements.push(ParsedRubyTxtElement::Ruby { value: ruby.1 });
                 }
             }
 

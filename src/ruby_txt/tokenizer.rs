@@ -8,7 +8,7 @@ pub enum RubyTxtToken {
     Kunojiten { dakuten: bool },
     NewLine,
 
-    PositionStartDelimiter, // ｜
+    PositionMarker, // ｜
 
     RubyStart, // 《
     RubyEnd,   // 》
@@ -49,7 +49,7 @@ pub fn tokenize_ruby_txt(txt: &str) -> Result<Vec<RubyTxtToken>> {
                 },
                 '\n' => Some((1, RubyTxtToken::NewLine)),
 
-                '｜' => Some((1, RubyTxtToken::PositionStartDelimiter)),
+                '｜' => Some((1, RubyTxtToken::PositionMarker)),
                 '《' => Some((1, RubyTxtToken::RubyStart)),
                 '》' => Some((1, RubyTxtToken::RubyEnd)),
 

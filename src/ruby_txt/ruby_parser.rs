@@ -1,14 +1,14 @@
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 
 use crate::{
-    ruby_txt::parser_helper::ParsedRubyTxtElement,
+    ruby_txt::parser::ParsedRubyTxtElement,
     ruby_txt::{block_parser::parse_block, tokenizer::RubyTxtToken},
 };
 
 // RubyStart ... RubyEnd
 pub(super) fn parse_ruby<'a>(
     tokens: &'a [&'a RubyTxtToken],
-) -> Result<(&'a [&'a RubyTxtToken], String)> {
+) -> Result<(&'a [&'a RubyTxtToken], Vec<ParsedRubyTxtElement>)> {
     ensure!(matches!(tokens.get(0), Some(RubyTxtToken::RubyStart)));
     let tokens = &tokens[1..];
 
@@ -32,19 +32,5 @@ pub(super) fn parse_ruby<'a>(
     let tokens = &tokens[(end_index + 1)..];
 
     let child_elements = parse_block(&child_tokens)?;
-    if child_elements.is_empty() {
-        return Ok((tokens, "".to_owned()));
-    }
-    ensure!(
-        child_elements.len() == 1,
-        "Invalid ruby: {:?}",
-        child_elements
-    );
-
-    let ruby = match &child_elements[0] {
-        ParsedRubyTxtElement::String { value: child_value } => child_value.clone(),
-        el => bail!("Invalid element is found in Ruby: {:?}", el),
-    };
-
-    Ok((tokens, ruby))
+    Ok((tokens, child_elements))
 }

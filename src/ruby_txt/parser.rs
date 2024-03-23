@@ -1,12 +1,168 @@
 use anyhow::{ensure, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 use crate::ruby_txt::{
     block_parser::parse_block,
-    parser_helper::{ParsedRubyTxt, ParsedRubyTxtElement},
     tokenizer::RubyTxtToken,
+    utility::{
+        BouDecorationSide, BouDecorationStyle, MidashiLevel, MidashiStyle, StringDecorationStyle,
+    },
 };
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParsedRubyTxt {
+    pub header: Vec<ParsedRubyTxtElement>,
+    pub body: Vec<ParsedRubyTxtElement>,
+    pub footer: Vec<ParsedRubyTxtElement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "type")]
+pub enum ParsedRubyTxtElement {
+    String {
+        value: String,
+    },
+    NewLine,
+    UnknownAnnotation {
+        // 非空
+        args: Vec<ParsedRubyTxtElement>,
+    },
+
+    // ｜
+    PositionMarker,
+
+    // 《○○》
+    Ruby {
+        // 非空
+        value: Vec<ParsedRubyTxtElement>,
+    },
+
+    KaichoAttention,      // ［＃改丁］
+    KaipageAttention,     // ［＃改ページ］
+    KaimihirakiAttention, // ［＃改見開き］
+    KaidanAttention,      // ［＃改段］
+
+    // ［＃○字下げ］ => { level: ○ }
+    JisageAnnotation {
+        level: usize,
+    },
+    // ［＃ここから○字下げ］ => { level: ○ }
+    JisageStartAnnotation {
+        level: usize,
+    },
+    // ［＃ここから○字下げ、折り返して●字下げ］ => { level0: ○, level1: ● }
+    JisageWithOrikaeshiStartAnnotation {
+        level0: usize,
+        level1: usize,
+    },
+    // ［＃ここから改行天付き、折り返して○字下げ］ => { level: ○ }
+    JisageAfterTentsukiStartAnnotation {
+        level: usize,
+    },
+    // ［＃ここで字下げ終わり］
+    JisageEndAnnotation,
+
+    // ［＃地付き］
+    JitsukiAnnotation,
+    // ［＃ここから地付き］
+    JitsukiStartAnnotation,
+    // ［＃ここで地付き終わり］
+    JitsukiEndAnnotation,
+
+    // ［＃地から○字上げ］
+    JiyoseAnnotation {
+        level: usize,
+    },
+    // ［＃ここから地から○字上げ］
+    JiyoseStartAnnotation {
+        level: usize,
+    },
+    // ［＃ここで字上げ終わり］
+    JiyoseEndAnnotation,
+
+    // ［＃ページの左右中央］
+    PageCenterAnnotation,
+
+    // 見出し
+    Midashi {
+        value: String,
+        level: MidashiLevel,
+        style: MidashiStyle,
+    },
+    MidashiStart {
+        level: MidashiLevel,
+        style: MidashiStyle,
+    },
+    MidashiEnd {
+        level: MidashiLevel,
+        style: MidashiStyle,
+    },
+
+    // 返り点
+    Kaeriten {
+        // 0:［＃一］, 1:［＃二］, 2:［＃三］, 3:［＃四］
+        ichini: Option<usize>,
+        // 0:［＃上］, 1:［＃中］, 2:［＃下］
+        jouge: Option<usize>,
+        // 0:［＃甲］, 1:［＃乙］, 2:［＃丙］, 3:［＃丁］
+        kouotsu: Option<usize>,
+        // false: なし, true:［＃レ］
+        re: bool,
+    },
+    // ［＃（○○）］
+    KuntenOkurigana {
+        value: String,
+    },
+
+    // 傍点・傍線
+    BouDecoration {
+        target: Vec<ParsedRubyTxtElement>,
+        side: BouDecorationSide,
+        style: BouDecorationStyle,
+    },
+    BouDecorationStart {
+        side: BouDecorationSide,
+        style: BouDecorationStyle,
+    },
+    BouDecorationEnd {
+        side: BouDecorationSide,
+        style: BouDecorationStyle,
+    },
+
+    // 太字・斜体
+    StringDecoration {
+        target: Vec<ParsedRubyTxtElement>,
+        style: StringDecorationStyle,
+    },
+    StringDecorationStart {
+        style: StringDecorationStyle,
+    },
+    StringDecorationEnd {
+        style: StringDecorationStyle,
+    },
+
+    // ［＃○○（●●.png）入る］
+    Image {
+        path: String,
+        alt: String,
+    },
+    // ［＃「○○」はキャプション］
+    Caption {
+        value: Vec<ParsedRubyTxtElement>,
+    },
+    // ［＃キャプション］
+    CaptionStart,
+    // ［＃キャプション終わり］
+    CaptionEnd,
+
+    // ［＃割り注］
+    WarichuStart,
+    // ［＃割り注終わり］
+    WarichuEnd,
+}
 
 // 構文解析
 pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<ParsedRubyTxt> {
