@@ -14,7 +14,7 @@ use std::{
 
 use crate::{
     list_person_all_extended_csv::parser::parse_list_person_all_extended_csv,
-    ruby_txt::{parser::parse_ruby_txt, tokenizer::tokenize_ruby_txt},
+    ruby_txt::{parser::parse_ruby_txt, renderer::render_ruby_txt, tokenizer::tokenize_ruby_txt},
     utility::ZipReader,
 };
 
@@ -149,13 +149,9 @@ fn main() -> Result<()> {
             46247, // 宮本百合子「日記」『一九二九年（昭和四年）』　謎 annotation
             //
             // 細かいミス
-            351, // 三遊亭圓朝「業平文治漂流奇談」　ルビの中に注記 "過《あやま［＃「ま」は、底本では欠如］》り"
-            1490, // 三遊亭圓朝「西洋人情話英国孝子ジョージスミス之伝」　ルビの中に注記 "願掛《がんがけ［＃底本では「け」が脱落］》"
-            2168, // 與謝野寛、與謝野晶子「巴里より」　"一番向｜《むか》うにある"
-            2218, // 若山牧水「樹木とその葉」　"しん［＃「しん」傍点］"
-            2559, // 與謝野晶子「遺書」　"態々《わざ／＼［＃底本では「／＼」は「／″＼」と誤植］》"
+            2168,  // 與謝野寛、與謝野晶子「巴里より」　"一番向｜《むか》うにある"
+            2218,  // 若山牧水「樹木とその葉」　"しん［＃「しん」傍点］"
             24456, // 南方熊楠「棄老傳説に就て」　"底本・" が "底本・初出："
-            42687, // 三遊亭圓朝「後の業平文治」　ルビの中に注記 "長大小《なが［＃「なが」は底本では「なだ」と誤記］だいしょう》"
             43035, // 岡本かの子「花は勁し」　"底本" が "定本" になっている
             56634, // 梅崎春生「幻化」　"「もう一杯｜《く》呉れ」"
         ]
@@ -166,6 +162,7 @@ fn main() -> Result<()> {
 
         // aozorabunko-json が未対応のものは飛ばす
         if [
+            1317,  // 小栗虫太郎「黒死館殺人事件」　画像にルビ
             1897,  // 正岡子規「墨汁一滴」　不明な外字 "※［＃「麾−毛」、42-8］"
             2032, // 宮本百合子「風に乗って来るコロポックル」　"《シサム》［＃「ム」は小書き片仮名ム、1-6-89］"
             47202, // 折口信夫「用言の発展」　"※［＃ハングル文字、「ロ／亅／一」、439-17］"
@@ -214,9 +211,17 @@ fn main() -> Result<()> {
                 let txt = encoding_rs::SHIFT_JIS.decode(&txt_bytes).0.into_owned();
 
                 if txt_url.contains("ruby") {
-                    let content = tokenize_ruby_txt(&txt).and_then(|x| parse_ruby_txt(&x))?;
+                    let content = tokenize_ruby_txt(&txt)?;
+
+                    let content = parse_ruby_txt(&content)?;
                     fs::write(
-                        &book_directory_path.join("content_from_ruby-txt.json"),
+                        &book_directory_path.join("ruby-txt_parsed.json"),
+                        serde_json::to_string_pretty(&content)?,
+                    )?;
+
+                    let content = render_ruby_txt(&content)?;
+                    fs::write(
+                        &book_directory_path.join("ruby-txt_rendered.json"),
                         serde_json::to_string_pretty(&content)?,
                     )?;
                 }
