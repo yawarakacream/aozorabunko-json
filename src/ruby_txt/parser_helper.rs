@@ -9,10 +9,6 @@ impl ParsedRubyTxtElementList {
         ParsedRubyTxtElementList { items: Vec::new() }
     }
 
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
     pub fn push(&mut self, element: ParsedRubyTxtElement) {
         if let ParsedRubyTxtElement::String { value } = element {
             self.push_str(&value);
@@ -43,10 +39,6 @@ impl ParsedRubyTxtElementList {
 
     pub fn extend(&mut self, elements: Vec<ParsedRubyTxtElement>) {
         self.items.extend(elements);
-    }
-
-    pub fn pop(&mut self) -> Option<ParsedRubyTxtElement> {
-        self.items.pop()
     }
 
     pub fn collect_to_vec(self) -> Vec<ParsedRubyTxtElement> {
