@@ -200,6 +200,7 @@ pub enum BookContentElement {
         style: book_content_element_util::BouDecorationStyle,
     },
 
+    // 太字・斜体
     StringDecoration {
         target: Vec<BookContentElement>,
         style: book_content_element_util::StringDecorationStyle,
@@ -210,6 +211,20 @@ pub enum BookContentElement {
     StringDecorationEnd {
         style: book_content_element_util::StringDecorationStyle,
     },
+
+    // ［＃○○（●●.png）入る］
+    Image {
+        path: String,
+        alt: String,
+    },
+    // ［＃「○○」はキャプション］
+    Caption {
+        value: Vec<BookContentElement>,
+    },
+    // ［＃キャプション］
+    CaptionStart,
+    // ［＃キャプション終わり］
+    CaptionEnd,
 
     // ［＃割り注］
     WarichuStart,

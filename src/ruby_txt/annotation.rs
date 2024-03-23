@@ -189,6 +189,10 @@ pub(super) fn parse_annotation<'a>(
                     style: StringDecorationStyle::Italic,
                 }));
             }
+
+            if annotation_name == "はキャプション" {
+                return Ok(Some(BookContentElement::Caption { value: target }));
+            }
         }
 
         // TODO
@@ -466,6 +470,26 @@ pub(super) fn parse_annotation<'a>(
             return Ok(Some(BookContentElement::StringDecorationEnd {
                 style: StringDecorationStyle::Italic,
             }));
+        }
+
+        static REGEX_IMAGE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(
+                r"^(?P<alt>.+)（(?P<path>fig[0-9]+_[0-9]+\.png)(、横[0-9]+×縦[0-9]+)?）入る$",
+            )
+            .unwrap()
+        });
+        if let Some(caps) = REGEX_IMAGE.captures(&arg) {
+            let path = caps.name("path").unwrap().as_str().to_owned();
+            let alt = caps.name("alt").unwrap().as_str().to_owned();
+            return Ok(Some(BookContentElement::Image { path, alt }));
+        }
+
+        if arg == "キャプション" {
+            return Ok(Some(BookContentElement::CaptionStart));
+        }
+
+        if arg == "キャプション終わり" {
+            return Ok(Some(BookContentElement::CaptionEnd));
         }
 
         if arg == "割り注" {
