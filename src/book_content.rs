@@ -83,6 +83,13 @@ pub mod book_content_element_util {
         DashedBousen,
         WaveBousen,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum StringDecorationStyle {
+        Bold,
+        Italic,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,16 +188,27 @@ pub enum BookContentElement {
     // 傍点・傍線
     BouDecoration {
         target: Vec<BookContentElement>,
-        style: book_content_element_util::BouDecorationStyle,
         side: book_content_element_util::BouDecorationSide,
+        style: book_content_element_util::BouDecorationStyle,
     },
     BouDecorationStart {
-        style: book_content_element_util::BouDecorationStyle,
         side: book_content_element_util::BouDecorationSide,
+        style: book_content_element_util::BouDecorationStyle,
     },
     BouDecorationEnd {
-        style: book_content_element_util::BouDecorationStyle,
         side: book_content_element_util::BouDecorationSide,
+        style: book_content_element_util::BouDecorationStyle,
+    },
+
+    StringDecoration {
+        target: Vec<BookContentElement>,
+        style: book_content_element_util::StringDecorationStyle,
+    },
+    StringDecorationStart {
+        style: book_content_element_util::StringDecorationStyle,
+    },
+    StringDecorationEnd {
+        style: book_content_element_util::StringDecorationStyle,
     },
 
     // ［＃割り注］
