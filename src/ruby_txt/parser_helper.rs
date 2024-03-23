@@ -1,21 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum BookContentOriginalDataType {
-    RubyTxt,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BookContent {
-    pub original_data_type: BookContentOriginalDataType,
-    pub header: Vec<BookContentElement>,
-    pub body: Vec<BookContentElement>,
-    pub footer: Vec<BookContentElement>,
+pub struct ParsedRubyTxt {
+    pub header: Vec<ParsedRubyTxtElement>,
+    pub body: Vec<ParsedRubyTxtElement>,
+    pub footer: Vec<ParsedRubyTxtElement>,
 }
 
-pub mod book_content_element_util {
+pub mod parsed_ruby_txt_element_util {
     use anyhow::{bail, Result};
     use serde::{Deserialize, Serialize};
 
@@ -94,13 +87,13 @@ pub mod book_content_element_util {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
-pub enum BookContentElement {
+pub enum ParsedRubyTxtElement {
     String {
         value: String,
     },
     NewLine,
     UnknownAnnotation {
-        args: Vec<BookContentElement>,
+        args: Vec<ParsedRubyTxtElement>,
     },
 
     RubyStart {
@@ -157,16 +150,16 @@ pub enum BookContentElement {
     // 見出し
     Midashi {
         value: String,
-        level: book_content_element_util::MidashiLevel,
-        style: book_content_element_util::MidashiStyle,
+        level: parsed_ruby_txt_element_util::MidashiLevel,
+        style: parsed_ruby_txt_element_util::MidashiStyle,
     },
     MidashiStart {
-        level: book_content_element_util::MidashiLevel,
-        style: book_content_element_util::MidashiStyle,
+        level: parsed_ruby_txt_element_util::MidashiLevel,
+        style: parsed_ruby_txt_element_util::MidashiStyle,
     },
     MidashiEnd {
-        level: book_content_element_util::MidashiLevel,
-        style: book_content_element_util::MidashiStyle,
+        level: parsed_ruby_txt_element_util::MidashiLevel,
+        style: parsed_ruby_txt_element_util::MidashiStyle,
     },
 
     // 返り点
@@ -187,29 +180,29 @@ pub enum BookContentElement {
 
     // 傍点・傍線
     BouDecoration {
-        target: Vec<BookContentElement>,
-        side: book_content_element_util::BouDecorationSide,
-        style: book_content_element_util::BouDecorationStyle,
+        target: Vec<ParsedRubyTxtElement>,
+        side: parsed_ruby_txt_element_util::BouDecorationSide,
+        style: parsed_ruby_txt_element_util::BouDecorationStyle,
     },
     BouDecorationStart {
-        side: book_content_element_util::BouDecorationSide,
-        style: book_content_element_util::BouDecorationStyle,
+        side: parsed_ruby_txt_element_util::BouDecorationSide,
+        style: parsed_ruby_txt_element_util::BouDecorationStyle,
     },
     BouDecorationEnd {
-        side: book_content_element_util::BouDecorationSide,
-        style: book_content_element_util::BouDecorationStyle,
+        side: parsed_ruby_txt_element_util::BouDecorationSide,
+        style: parsed_ruby_txt_element_util::BouDecorationStyle,
     },
 
     // 太字・斜体
     StringDecoration {
-        target: Vec<BookContentElement>,
-        style: book_content_element_util::StringDecorationStyle,
+        target: Vec<ParsedRubyTxtElement>,
+        style: parsed_ruby_txt_element_util::StringDecorationStyle,
     },
     StringDecorationStart {
-        style: book_content_element_util::StringDecorationStyle,
+        style: parsed_ruby_txt_element_util::StringDecorationStyle,
     },
     StringDecorationEnd {
-        style: book_content_element_util::StringDecorationStyle,
+        style: parsed_ruby_txt_element_util::StringDecorationStyle,
     },
 
     // ［＃○○（●●.png）入る］
@@ -219,7 +212,7 @@ pub enum BookContentElement {
     },
     // ［＃「○○」はキャプション］
     Caption {
-        value: Vec<BookContentElement>,
+        value: Vec<ParsedRubyTxtElement>,
     },
     // ［＃キャプション］
     CaptionStart,
@@ -232,16 +225,16 @@ pub enum BookContentElement {
     WarichuEnd,
 }
 
-pub struct BookContentElementList {
-    items: Vec<BookContentElement>,
+pub struct ParsedRubyTxtElementList {
+    items: Vec<ParsedRubyTxtElement>,
     string_buffer: String,
 
     next_item_id: usize,
 }
 
-impl BookContentElementList {
+impl ParsedRubyTxtElementList {
     pub fn new() -> Self {
-        BookContentElementList {
+        ParsedRubyTxtElementList {
             items: Vec::new(),
             string_buffer: String::new(),
 
@@ -253,7 +246,7 @@ impl BookContentElementList {
         self.items.len()
     }
 
-    pub fn push(&mut self, element: BookContentElement) {
+    pub fn push(&mut self, element: ParsedRubyTxtElement) {
         self.apply_string_buffer();
 
         self.items.push(element);
@@ -269,9 +262,9 @@ impl BookContentElementList {
         self.string_buffer.push_str(&value);
     }
 
-    pub fn extend(&mut self, elements: Vec<BookContentElement>) {
+    pub fn extend(&mut self, elements: Vec<ParsedRubyTxtElement>) {
         for el in elements {
-            if let BookContentElement::String { value } = el {
+            if let ParsedRubyTxtElement::String { value } = el {
                 self.push_str(&value);
             } else {
                 self.push(el);
@@ -279,7 +272,7 @@ impl BookContentElementList {
         }
     }
 
-    pub fn pop(&mut self) -> Option<BookContentElement> {
+    pub fn pop(&mut self) -> Option<ParsedRubyTxtElement> {
         self.items.pop()
     }
 
@@ -291,19 +284,19 @@ impl BookContentElementList {
         let string_buffer = self.string_buffer.clone();
         self.string_buffer.clear();
 
-        self.push(BookContentElement::String {
+        self.push(ParsedRubyTxtElement::String {
             value: string_buffer,
         });
     }
 
-    pub fn collect_to_vec(mut self) -> Vec<BookContentElement> {
+    pub fn collect_to_vec(mut self) -> Vec<ParsedRubyTxtElement> {
         self.apply_string_buffer();
 
         // String を纏める
         let mut items = Vec::new();
         for item in self.items {
-            if let BookContentElement::String { value } = &item {
-                if let Some(BookContentElement::String { value: last_value }) = items.last_mut() {
+            if let ParsedRubyTxtElement::String { value } = &item {
+                if let Some(ParsedRubyTxtElement::String { value: last_value }) = items.last_mut() {
                     last_value.push_str(&value);
                     continue;
                 }
@@ -316,11 +309,11 @@ impl BookContentElementList {
     }
 }
 
-impl<Idx> std::ops::Index<Idx> for BookContentElementList
+impl<Idx> std::ops::Index<Idx> for ParsedRubyTxtElementList
 where
-    Idx: std::slice::SliceIndex<[BookContentElement], Output = BookContentElement>,
+    Idx: std::slice::SliceIndex<[ParsedRubyTxtElement], Output = ParsedRubyTxtElement>,
 {
-    type Output = BookContentElement;
+    type Output = ParsedRubyTxtElement;
 
     #[inline(always)]
     fn index(&self, index: Idx) -> &Self::Output {

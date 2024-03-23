@@ -7,10 +7,12 @@
 //   単なる区切り？としての利用もある
 //   - (例) https://www.aozora.gr.jp/cards/000124/card652.html
 
-mod annotation;
-mod delimiter_and_tokens;
-mod gaiji_accent_decomposition;
-mod gaiji_annotation;
-mod ruby;
-pub mod ruby_txt_parser;
-pub mod ruby_txt_tokenizer;
+mod annotation_parser;
+mod block_parser;
+mod delimiter_and_tokens_parser;
+mod gaiji_accent_decomposition_parser;
+mod gaiji_annotation_parser;
+pub mod parser;
+pub mod parser_helper;
+mod ruby_parser;
+pub mod tokenizer;

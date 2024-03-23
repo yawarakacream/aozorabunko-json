@@ -1,13 +1,13 @@
 use anyhow::{ensure, Result};
 
 use crate::{
-    book_content::BookContentElement,
-    ruby_txt::{ruby::parse_ruby, ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
+    ruby_txt::parser_helper::ParsedRubyTxtElement,
+    ruby_txt::{block_parser::parse_block, ruby_parser::parse_ruby, tokenizer::RubyTxtToken},
 };
 
 pub(super) enum ParsedDelimiterAndTokens<'a> {
     NotDelimiter,
-    Element(&'a [&'a RubyTxtToken], Vec<BookContentElement>),
+    Element(&'a [&'a RubyTxtToken], Vec<ParsedRubyTxtElement>),
 }
 
 // PositionStartDelimiter ... (RubyStart ... RubyEnd)
@@ -29,8 +29,8 @@ pub(super) fn parse_delimiter_and_tokens<'a>(
                 let ruby = ruby.1;
 
                 let mut child_elements = parse_block(&child_tokens)?;
-                child_elements.insert(0, BookContentElement::RubyStart { value: ruby });
-                child_elements.push(BookContentElement::RubyEnd);
+                child_elements.insert(0, ParsedRubyTxtElement::RubyStart { value: ruby });
+                child_elements.push(ParsedRubyTxtElement::RubyEnd);
 
                 return Ok(ParsedDelimiterAndTokens::Element(tokens, child_elements));
             }

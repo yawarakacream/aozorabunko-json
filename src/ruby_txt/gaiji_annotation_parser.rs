@@ -3,9 +3,10 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{
-    book_content::BookContentElement,
     jis_x_0213,
-    ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
+    ruby_txt::{
+        block_parser::parse_block, parser_helper::ParsedRubyTxtElement, tokenizer::RubyTxtToken,
+    },
 };
 
 pub(super) enum ParsedGaijiAnnotation {
@@ -60,7 +61,7 @@ pub(super) fn parse_gaiji_annotation<'a>(
     );
 
     let annotation = match &child_elements[0] {
-        BookContentElement::String { value } => value,
+        ParsedRubyTxtElement::String { value } => value,
         t => bail!("Invalid gaiji annotation: {:?}", t),
     };
 

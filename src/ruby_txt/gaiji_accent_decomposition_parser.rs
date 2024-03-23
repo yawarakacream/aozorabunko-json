@@ -1,13 +1,13 @@
 use anyhow::{ensure, Result};
 
 use crate::{
-    book_content::BookContentElement,
-    ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
+    ruby_txt::parser_helper::ParsedRubyTxtElement,
+    ruby_txt::{block_parser::parse_block, tokenizer::RubyTxtToken},
 };
 
 pub(super) enum ParsedGaijiAccentDecomposition<'a> {
     NotAccentDecomposition,
-    Composed(&'a [&'a RubyTxtToken], Vec<BookContentElement>),
+    Composed(&'a [&'a RubyTxtToken], Vec<ParsedRubyTxtElement>),
 }
 
 // GaijiAccentDecompositionStart String GaijiAccentDecompositionEnd

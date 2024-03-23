@@ -1,8 +1,8 @@
 use anyhow::{bail, ensure, Context, Result};
 
 use crate::{
-    book_content::BookContentElement,
-    ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
+    ruby_txt::parser_helper::ParsedRubyTxtElement,
+    ruby_txt::{block_parser::parse_block, tokenizer::RubyTxtToken},
 };
 
 // RubyStart ... RubyEnd
@@ -42,7 +42,7 @@ pub(super) fn parse_ruby<'a>(
     );
 
     let ruby = match &child_elements[0] {
-        BookContentElement::String { value: child_value } => child_value.clone(),
+        ParsedRubyTxtElement::String { value: child_value } => child_value.clone(),
         el => bail!("Invalid element is found in Ruby: {:?}", el),
     };
 

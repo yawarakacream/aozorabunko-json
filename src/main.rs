@@ -1,4 +1,3 @@
-pub mod book_content;
 pub mod jis_x_0213;
 pub mod list_person_all_extended_csv;
 pub mod ruby_txt;
@@ -14,8 +13,8 @@ use std::{
 };
 
 use crate::{
-    list_person_all_extended_csv::list_person_all_extended_csv_parser::parse_list_person_all_extended_csv,
-    ruby_txt::{ruby_txt_parser::parse_ruby_txt, ruby_txt_tokenizer::tokenize_ruby_txt},
+    list_person_all_extended_csv::parser::parse_list_person_all_extended_csv,
+    ruby_txt::{parser::parse_ruby_txt, tokenizer::tokenize_ruby_txt},
     utility::ZipReader,
 };
 
