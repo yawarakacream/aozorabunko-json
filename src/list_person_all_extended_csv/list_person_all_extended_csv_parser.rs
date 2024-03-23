@@ -80,10 +80,8 @@ pub struct AozorabunkoIndexList {
     pub book_authors: Vec<BookAuthor>,
 }
 
-pub fn parse_index_list_extended(
-    list_person_all_extended_csv: &str,
-) -> Result<AozorabunkoIndexList> {
-    let mut reader = csv::Reader::from_reader(list_person_all_extended_csv.as_bytes());
+pub fn parse_list_person_all_extended_csv(csv: &str) -> Result<AozorabunkoIndexList> {
+    let mut reader = csv::Reader::from_reader(csv.as_bytes());
 
     let mut authors = HashMap::<usize, Author>::new();
     let mut books = HashMap::<usize, Book>::new();

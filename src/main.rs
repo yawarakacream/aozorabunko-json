@@ -1,6 +1,6 @@
 pub mod book_content;
-pub mod index_list_extended_parser;
 pub mod jis_x_0213;
+pub mod list_person_all_extended_csv;
 pub mod ruby_txt;
 pub mod utility;
 
@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    index_list_extended_parser::parse_index_list_extended,
+    list_person_all_extended_csv::list_person_all_extended_csv_parser::parse_list_person_all_extended_csv,
     ruby_txt::{ruby_txt_parser::parse_ruby_txt, ruby_txt_tokenizer::tokenize_ruby_txt},
     utility::ZipReader,
 };
@@ -81,7 +81,7 @@ fn main() -> Result<()> {
         let mut csv_entry = csv_zip_reader.get_by_path("list_person_all_extended_utf8.csv")?;
         let csv_data = csv_entry.as_string()?;
 
-        parse_index_list_extended(&csv_data)?
+        parse_list_person_all_extended_csv(&csv_data)?
     };
 
     fs::write(
