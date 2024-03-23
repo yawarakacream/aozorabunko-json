@@ -67,7 +67,6 @@ pub(super) fn parse_gaiji_annotation<'a>(
     // 変体仮名
     static REGEX_HENTAIGANA: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"^変体仮名(?P<kana>.).*$").unwrap());
-
     if let Some(caps) = REGEX_HENTAIGANA.captures(&annotation) {
         let kana = caps.name("kana").unwrap().as_str();
         return Ok((tokens, ParsedGaijiAnnotation::String(kana.to_string())));
@@ -78,7 +77,6 @@ pub(super) fn parse_gaiji_annotation<'a>(
         Regex::new(r"^[^、]+、(第[3-4]水準)?(?P<plane>[0-9]+)-(?P<row>[0-9]+)-(?P<cell>[0-9]+)$")
             .unwrap()
     });
-
     if let Some(caps) = REGEX_JIS.captures(&annotation) {
         let plane = caps
             .name("plane")
@@ -108,7 +106,6 @@ pub(super) fn parse_gaiji_annotation<'a>(
     // 外字（第 1 第 2 水準にない漢字：JIS X 0213 にないが Unicode にある，特殊な仮名や記号など）
     static REGEX_UNICODE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"^.+?、U\+(?P<unicode>[0-9A-Fa-f]+)、[0-9]+-[0-9]+$").unwrap());
-
     if let Some(caps) = REGEX_UNICODE.captures(&annotation) {
         let unicode = caps.name("unicode").unwrap().as_str();
         let unicode = u32::from_str_radix(unicode, 16).context("Invalid unicode")?;
