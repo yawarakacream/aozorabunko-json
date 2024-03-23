@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Ok, Result};
+use anyhow::{bail, ensure, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -14,7 +14,7 @@ use crate::{
 // AnnotationStart ... AnnotationEnd
 pub(super) fn parse_annotation<'a>(
     tokens: &'a [&'a RubyTxtToken],
-) -> Result<(&'a [&'a RubyTxtToken], BookContentElement)> {
+) -> Result<(&'a [&'a RubyTxtToken], Option<BookContentElement>)> {
     ensure!(matches!(tokens.get(0), Some(RubyTxtToken::AnnotationStart)));
     let tokens = &tokens[1..];
 
@@ -50,9 +50,127 @@ pub(super) fn parse_annotation<'a>(
     let annotation = (|| {
         // 空の annotation は "［＃］：入力者注　主に外字の説明や、傍点の位置の指定" のように使われることがある
         if args.len() == 0 {
-            return Ok(BookContentElement::String {
+            return Ok(Some(BookContentElement::String {
                 value: "［＃］".to_owned(),
-            });
+            }));
+        }
+
+        let first_arg = match args.first().unwrap() {
+            BookContentElement::String { value } => value,
+            _ => bail!("Unknown annotation: {:?}", args),
+        };
+
+        let last_arg = match args.last().unwrap() {
+            BookContentElement::String { value } => value,
+            _ => bail!("Unknown annotation: {:?}", args),
+        };
+
+        if first_arg.starts_with("「") {
+            // ［＃「○○」に「ママ」の注記］
+            if last_arg.ends_with("」に「ママ」の注記") {
+                return Ok(None);
+            }
+
+            // ［＃「○○」は底本では「●●」］
+            for arg in &args {
+                if let BookContentElement::String { value } = arg {
+                    if value.contains("」は底本では「") && last_arg.ends_with("」") {
+                        return Ok(None);
+                    }
+                }
+            }
+
+            // ［＃「○○」はママ］
+            // ［＃ルビの「○○」はママ］
+            if last_arg.ends_with("」はママ") {
+                return Ok(None);
+            }
+        }
+
+        // // 底本に関する注記は例外がかなり多いので `底本では` を含むものをすべて無視する
+        // // TODO: よくないと思うのでなんとかする
+        // for arg in &args {
+        //     if let BookContentElement::String { value } = arg {
+        //         if value.contains("底本では") {
+        //             return Ok(None);
+        //         }
+        //     }
+        // }
+
+        static REGEX_BOUTEN: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"」(?P<left>の左)?に(?P<style>.*)傍点$").unwrap());
+        if let Some(caps) = REGEX_BOUTEN.captures(last_arg) {
+            ensure!(first_arg.starts_with("「"), "Invalid bouten: {:?}", args);
+
+            let style = match BoutenStyle::of(caps.name("style").unwrap().as_str()) {
+                Ok(style) => style,
+                Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
+            };
+            let side = match caps.name("left") {
+                Some(left) => {
+                    assert_eq!(left.as_str(), "の左");
+                    crate::book_content::book_content_element_util::BoutenSide::Left
+                }
+                None => crate::book_content::book_content_element_util::BoutenSide::Right,
+            };
+            let target = match args.len() {
+                1 => {
+                    let l = "「".len();
+                    let r = first_arg.rfind('」').unwrap();
+                    vec![BookContentElement::String {
+                        value: first_arg[l..r].to_string(),
+                    }]
+                }
+
+                _ => {
+                    ensure!(args.len() != 2, "Invalid bouten: {:?}", args);
+
+                    let first = if "「".len() < first_arg.len() {
+                        Some(BookContentElement::String {
+                            value: first_arg["「".len()..].to_string(),
+                        })
+                    } else {
+                        None
+                    };
+
+                    let last = {
+                        let r = last_arg.rfind('」').unwrap();
+                        if 0 < r {
+                            Some(BookContentElement::String {
+                                value: last_arg[..r].to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    };
+
+                    let mut target = Vec::new();
+
+                    if let Some(first) = first {
+                        target.push(first);
+                    }
+
+                    let mut args = args;
+                    target.extend(args.drain(1..(args.len() - 1)));
+
+                    if let Some(last) = last {
+                        target.push(last);
+                    }
+
+                    target
+                }
+            };
+
+            return Ok(Some(BookContentElement::Bouten {
+                target,
+                style: style.clone(),
+                side: side.clone(),
+            }));
+        }
+
+        // TODO
+        if 1 < args.len() {
+            return Ok(Some(BookContentElement::UnknownAnnotation { args }));
         }
 
         // 1 文字列のもの
@@ -63,19 +181,19 @@ pub(super) fn parse_annotation<'a>(
         };
 
         if arg == "改丁" {
-            return Ok(BookContentElement::KaichoAttention);
+            return Ok(Some(BookContentElement::KaichoAttention));
         }
 
         if arg == "改ページ" {
-            return Ok(BookContentElement::KaipageAttention);
+            return Ok(Some(BookContentElement::KaipageAttention));
         }
 
         if arg == "改見開き" {
-            return Ok(BookContentElement::KaimihirakiAttention);
+            return Ok(Some(BookContentElement::KaimihirakiAttention));
         }
 
         if arg == "改段" {
-            return Ok(BookContentElement::KaidanAttention);
+            return Ok(Some(BookContentElement::KaidanAttention));
         }
 
         static REGEX_JISAGE: Lazy<Regex> =
@@ -83,7 +201,7 @@ pub(super) fn parse_annotation<'a>(
         if let Some(caps) = REGEX_JISAGE.captures(&arg) {
             let level = parse_number(caps.name("level").unwrap().as_str())
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
-            return Ok(BookContentElement::JisageAnnotation { level });
+            return Ok(Some(BookContentElement::JisageAnnotation { level }));
         }
 
         static REGEX_JISAGE_START: Lazy<Regex> =
@@ -91,7 +209,7 @@ pub(super) fn parse_annotation<'a>(
         if let Some(caps) = REGEX_JISAGE_START.captures(&arg) {
             let level = parse_number(caps.name("level").unwrap().as_str())
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
-            return Ok(BookContentElement::JisageStartAnnotation { level });
+            return Ok(Some(BookContentElement::JisageStartAnnotation { level }));
         }
 
         static REGEX_JISAGE_WITH_ORIKAESHI_START: Lazy<Regex> = Lazy::new(|| {
@@ -105,7 +223,9 @@ pub(super) fn parse_annotation<'a>(
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
             let level1 = parse_number(caps.name("level1").unwrap().as_str())
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
-            return Ok(BookContentElement::JisageWithOrikaeshiStartAnnotation { level0, level1 });
+            return Ok(Some(
+                BookContentElement::JisageWithOrikaeshiStartAnnotation { level0, level1 },
+            ));
         }
 
         static REGEX_JISAGE_AFTER_TENTSUKI_START: Lazy<Regex> = Lazy::new(|| {
@@ -114,23 +234,25 @@ pub(super) fn parse_annotation<'a>(
         if let Some(caps) = REGEX_JISAGE_AFTER_TENTSUKI_START.captures(&arg) {
             let level = parse_number(caps.name("level").unwrap().as_str())
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
-            return Ok(BookContentElement::JisageAfterTentsukiStartAnnotation { level });
+            return Ok(Some(
+                BookContentElement::JisageAfterTentsukiStartAnnotation { level },
+            ));
         }
 
         if arg == "ここで字下げ終わり" {
-            return Ok(BookContentElement::JisageEndAnnotation);
+            return Ok(Some(BookContentElement::JisageEndAnnotation));
         }
 
         if arg == "地付き" {
-            return Ok(BookContentElement::JitsukiAnnotation);
+            return Ok(Some(BookContentElement::JitsukiAnnotation));
         }
 
         if arg == "ここから地付き" {
-            return Ok(BookContentElement::JitsukiStartAnnotation);
+            return Ok(Some(BookContentElement::JitsukiStartAnnotation));
         }
 
         if arg == "ここで地付き終わり" {
-            return Ok(BookContentElement::JitsukiEndAnnotation);
+            return Ok(Some(BookContentElement::JitsukiEndAnnotation));
         }
 
         static REGEX_JIYOSE: Lazy<Regex> =
@@ -138,7 +260,7 @@ pub(super) fn parse_annotation<'a>(
         if let Some(caps) = REGEX_JIYOSE.captures(&arg) {
             let level = parse_number(caps.name("level").unwrap().as_str())
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
-            return Ok(BookContentElement::JiyoseAnnotation { level });
+            return Ok(Some(BookContentElement::JiyoseAnnotation { level }));
         }
 
         static REGEX_JIYOSE_START: Lazy<Regex> =
@@ -146,15 +268,15 @@ pub(super) fn parse_annotation<'a>(
         if let Some(caps) = REGEX_JIYOSE_START.captures(&arg) {
             let level = parse_number(caps.name("level").unwrap().as_str())
                 .with_context(|| format!("Failed to parse {:?}", arg))?;
-            return Ok(BookContentElement::JiyoseStartAnnotation { level });
+            return Ok(Some(BookContentElement::JiyoseStartAnnotation { level }));
         }
 
         if arg == "ここで字上げ終わり" {
-            return Ok(BookContentElement::JiyoseEndAnnotation);
+            return Ok(Some(BookContentElement::JiyoseEndAnnotation));
         }
 
         if arg == "ページの左右中央" {
-            return Ok(BookContentElement::PageCenterAnnotation);
+            return Ok(Some(BookContentElement::PageCenterAnnotation));
         }
 
         static REGEX_MIDASHI: Lazy<Regex> = Lazy::new(|| {
@@ -174,11 +296,11 @@ pub(super) fn parse_annotation<'a>(
                 "小" => MidashiLevel::Ko,
                 x => bail!("Unknown midashi level: {:?}", x),
             };
-            return Ok(BookContentElement::Midashi {
+            return Ok(Some(BookContentElement::Midashi {
                 value,
                 style,
                 level,
-            });
+            }));
         }
 
         static REGEX_MIDASHI_START: Lazy<Regex> =
@@ -196,7 +318,7 @@ pub(super) fn parse_annotation<'a>(
                 "小" => MidashiLevel::Ko,
                 x => bail!("Unknown midashi level: {:?}", x),
             };
-            return Ok(BookContentElement::MidashiStart { level, style });
+            return Ok(Some(BookContentElement::MidashiStart { level, style }));
         }
 
         static REGEX_MIDASHI_END: Lazy<Regex> = Lazy::new(|| {
@@ -205,7 +327,7 @@ pub(super) fn parse_annotation<'a>(
         if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
             let style = MidashiStyle::of(caps.name("style").unwrap().as_str())?;
             let level = MidashiLevel::of(caps.name("level").unwrap().as_str())?;
-            return Ok(BookContentElement::MidashiStart { level, style });
+            return Ok(Some(BookContentElement::MidashiStart { level, style }));
         }
 
         static REGEX_KAERITEN: Lazy<Regex> = Lazy::new(|| {
@@ -248,47 +370,30 @@ pub(super) fn parse_annotation<'a>(
                 },
                 None => false,
             };
-            return Ok(BookContentElement::Kaeriten {
+            return Ok(Some(BookContentElement::Kaeriten {
                 ichini,
                 jouge,
                 kouotsu,
                 re,
-            });
+            }));
         }
 
         static REGEX_KUNTEN_OKURIGANA: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^（(?P<kana>.+)）$").unwrap());
         if let Some(caps) = REGEX_KUNTEN_OKURIGANA.captures(&arg) {
             let kana = caps.name("kana").unwrap().as_str();
-            return Ok(BookContentElement::KuntenOkurigana {
+            return Ok(Some(BookContentElement::KuntenOkurigana {
                 value: kana.to_owned(),
-            });
-        }
-
-        static REGEX_BOUTEN: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"^「(?P<target>.+)」(?P<left>の左)?に(?P<style>.*)傍点$").unwrap()
-        });
-        if let Some(caps) = REGEX_BOUTEN.captures(&arg) {
-            let target = caps.name("target").unwrap().as_str().to_owned();
-            let style = BoutenStyle::of(caps.name("style").unwrap().as_str())?;
-            let side = match caps.name("left") {
-                Some(left) => {
-                    assert_eq!(left.as_str(), "の左");
-                    crate::book_content::book_content_element_util::BoutenSide::Left
-                }
-                None => crate::book_content::book_content_element_util::BoutenSide::Right,
-            };
-            return Ok(BookContentElement::Bouten {
-                target,
-                style,
-                side,
-            });
+            }));
         }
 
         static REGEX_BOUTEN_START: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*)傍点$").unwrap());
         if let Some(caps) = REGEX_BOUTEN_START.captures(&arg) {
-            let style = BoutenStyle::of(caps.name("style").unwrap().as_str())?;
+            let style = match BoutenStyle::of(caps.name("style").unwrap().as_str()) {
+                Ok(style) => style,
+                Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
+            };
             let side = match caps.name("left") {
                 Some(left) => {
                     assert_eq!(left.as_str(), "左に");
@@ -296,13 +401,16 @@ pub(super) fn parse_annotation<'a>(
                 }
                 None => crate::book_content::book_content_element_util::BoutenSide::Right,
             };
-            return Ok(BookContentElement::BoutenStart { style, side });
+            return Ok(Some(BookContentElement::BoutenStart { style, side }));
         }
 
         static REGEX_BOUTEN_END: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*)傍点終わり$").unwrap());
         if let Some(caps) = REGEX_BOUTEN_END.captures(&arg) {
-            let style = BoutenStyle::of(caps.name("style").unwrap().as_str())?;
+            let style = match BoutenStyle::of(caps.name("style").unwrap().as_str()) {
+                Ok(style) => style,
+                Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
+            };
             let side = match caps.name("left") {
                 Some(left) => {
                     assert_eq!(left.as_str(), "左に");
@@ -310,22 +418,18 @@ pub(super) fn parse_annotation<'a>(
                 }
                 None => crate::book_content::book_content_element_util::BoutenSide::Right,
             };
-            return Ok(BookContentElement::BoutenEnd { style, side });
+            return Ok(Some(BookContentElement::BoutenEnd { style, side }));
         }
 
         if arg == "割り注" {
-            return Ok(BookContentElement::WarichuStart);
+            return Ok(Some(BookContentElement::WarichuStart));
         }
 
         if arg == "割り注終わり" {
-            return Ok(BookContentElement::WarichuEnd);
+            return Ok(Some(BookContentElement::WarichuEnd));
         }
 
-        // bail!("???? {:?}", args);
-        // TODO
-        Ok(BookContentElement::String {
-            value: format!("[Unknown Annotation]({:?})", args),
-        })
+        Ok(Some(BookContentElement::UnknownAnnotation { args }))
     })()?;
 
     Ok((tokens, annotation))

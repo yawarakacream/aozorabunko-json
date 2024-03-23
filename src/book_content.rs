@@ -19,7 +19,7 @@ pub mod book_content_element_util {
     use anyhow::{bail, Result};
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub enum MidashiLevel {
         Oh,   // 大見出し
@@ -37,7 +37,7 @@ pub mod book_content_element_util {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub enum MidashiStyle {
         Normal, // ［＃中見出し］ 等
@@ -55,7 +55,7 @@ pub mod book_content_element_util {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub enum BoutenStyle {
         // 名前は https://www.aozora.gr.jp/annotation/emphasis.html#boten_chuki
@@ -86,7 +86,7 @@ pub mod book_content_element_util {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub enum BoutenSide {
         Left,
@@ -101,6 +101,9 @@ pub enum BookContentElement {
         value: String,
     },
     NewLine,
+    UnknownAnnotation {
+        args: Vec<BookContentElement>,
+    },
 
     RubyStart {
         value: String,
@@ -186,7 +189,7 @@ pub enum BookContentElement {
 
     // 傍点
     Bouten {
-        target: String,
+        target: Vec<BookContentElement>,
         style: book_content_element_util::BoutenStyle,
         side: book_content_element_util::BoutenSide,
     },

@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -227,34 +227,42 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
                 elements.apply_string_buffer();
 
                 // 範囲を探索してルビを振る
-                match elements.pop().context("Cannod set ruby to None")? {
-                    BookContentElement::String { value } => {
-                        ensure!(!value.is_empty(), "Cannot set ruby to empty String");
+                let mut passed = Vec::new();
+                loop {
+                    match elements.pop().context("Cannod find String to set ruby")? {
+                        BookContentElement::String { value } => {
+                            ensure!(!value.is_empty(), "Cannot set ruby to empty String");
 
-                        let value_chars: Vec<_> = value.chars().collect();
+                            let value_chars: Vec<_> = value.chars().collect();
 
-                        let mut ruby_start_index = value_chars.len();
-                        let last_char_type = CharType::from(*value_chars.last().unwrap());
-                        for c in value_chars.iter().rev() {
-                            if CharType::from(*c) != last_char_type {
-                                break;
+                            let mut ruby_start_index = value_chars.len();
+                            let last_char_type = CharType::from(*value_chars.last().unwrap());
+                            for c in value_chars.iter().rev() {
+                                if CharType::from(*c) != last_char_type {
+                                    break;
+                                }
+                                ruby_start_index -= 1;
                             }
-                            ruby_start_index -= 1;
-                        }
 
-                        if 0 < ruby_start_index {
+                            if 0 < ruby_start_index {
+                                elements.push(BookContentElement::String {
+                                    value: value_chars[..ruby_start_index].iter().collect(),
+                                });
+                            }
+                            elements.push(BookContentElement::RubyStart { value: ruby });
                             elements.push(BookContentElement::String {
-                                value: value_chars[..ruby_start_index].iter().collect(),
+                                value: value_chars[ruby_start_index..].iter().collect(),
                             });
-                        }
-                        elements.push(BookContentElement::RubyStart { value: ruby });
-                        elements.push(BookContentElement::String {
-                            value: value_chars[ruby_start_index..].iter().collect(),
-                        });
-                        elements.push(BookContentElement::RubyEnd);
-                    }
+                            elements.push(BookContentElement::RubyEnd);
+                            while let Some(el) = passed.pop() {
+                                elements.push(el);
+                            }
 
-                    el => bail!("Cannot set ruby {:?} to {:?}", ruby, el),
+                            break;
+                        }
+
+                        el => passed.push(el),
+                    }
                 }
             }
 
@@ -267,7 +275,9 @@ pub(super) fn parse_block<'a>(tokens: &'a [&'a RubyTxtToken]) -> Result<Vec<Book
             RubyTxtToken::AnnotationStart => {
                 let parsed = parse_annotation(tokens)?;
                 tokens = parsed.0;
-                elements.push(parsed.1);
+                if let Some(el) = parsed.1 {
+                    elements.push(el);
+                }
             }
 
             RubyTxtToken::AnnotationEnd => {
