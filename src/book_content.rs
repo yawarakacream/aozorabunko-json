@@ -233,7 +233,7 @@ pub enum BookContentElement {
 }
 
 pub struct BookContentElementList {
-    items: Vec<BookContentElementListItem>,
+    items: Vec<BookContentElement>,
     string_buffer: String,
 
     next_item_id: usize,
@@ -249,14 +249,6 @@ impl BookContentElementList {
         }
     }
 
-    pub fn last_id(&self) -> Option<BookContentElementListItemId> {
-        self.items.last().and_then(|item| Some(item.id))
-    }
-
-    pub fn pop(&mut self) -> Option<BookContentElement> {
-        self.items.pop().and_then(|el| Some(el.element))
-    }
-
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -264,10 +256,7 @@ impl BookContentElementList {
     pub fn push(&mut self, element: BookContentElement) {
         self.apply_string_buffer();
 
-        self.items.push(BookContentElementListItem {
-            element,
-            id: BookContentElementListItemId(self.next_item_id),
-        });
+        self.items.push(element);
 
         self.next_item_id += 1;
     }
@@ -290,8 +279,8 @@ impl BookContentElementList {
         }
     }
 
-    pub fn position_by_id(&self, id: &BookContentElementListItemId) -> Option<usize> {
-        self.items.iter().position(|item| id == &item.id)
+    pub fn pop(&mut self) -> Option<BookContentElement> {
+        self.items.pop()
     }
 
     pub fn apply_string_buffer(&mut self) {
@@ -307,24 +296,20 @@ impl BookContentElementList {
         });
     }
 
-    pub fn remove_by_id(&mut self, id: &BookContentElementListItemId) {
-        self.items.retain(|item| id != &item.id);
-    }
-
     pub fn collect_to_vec(mut self) -> Vec<BookContentElement> {
         self.apply_string_buffer();
 
         // String を纏める
         let mut items = Vec::new();
         for item in self.items {
-            if let BookContentElement::String { value } = &item.element {
+            if let BookContentElement::String { value } = &item {
                 if let Some(BookContentElement::String { value: last_value }) = items.last_mut() {
                     last_value.push_str(&value);
                     continue;
                 }
             }
 
-            items.push(item.element);
+            items.push(item);
         }
 
         items
@@ -333,21 +318,12 @@ impl BookContentElementList {
 
 impl<Idx> std::ops::Index<Idx> for BookContentElementList
 where
-    Idx: std::slice::SliceIndex<[BookContentElementListItem], Output = BookContentElementListItem>,
+    Idx: std::slice::SliceIndex<[BookContentElement], Output = BookContentElement>,
 {
-    type Output = BookContentElementListItem;
+    type Output = BookContentElement;
 
     #[inline(always)]
     fn index(&self, index: Idx) -> &Self::Output {
         self.items.index(index)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BookContentElementListItemId(usize);
-
-#[derive(Debug)]
-pub struct BookContentElementListItem {
-    id: BookContentElementListItemId,
-    element: BookContentElement,
 }
