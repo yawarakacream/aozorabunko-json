@@ -182,7 +182,9 @@ impl CharType {
             Self::Hiragana
         } else if 0x30a0 <= u && u <= 0x30ff {
             Self::Katakana
-        } else if 0x4e00 <= u && u <= 0x9fff
+        } else if 0x3400 <= u && u <= 0x4dbf
+            || 0x4e00 <= u && u <= 0x9fff
+            || 0xf900 <= u && u <= 0xfaff
             || c == '仝'
             || c == '々'
             || c == '〆'
