@@ -57,44 +57,35 @@ pub mod book_content_element_util {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub enum BoutenStyle {
-        // 名前は https://www.aozora.gr.jp/annotation/emphasis.html#boten_chuki
-        SesameDot,
-        WhiteSesameDot,
-        BlackCircle,
-        WhiteCircle,
-        BlackUpPointingTriangle,
-        WhiteUpPointingTriangle,
-        Bullseye,
-        Fisheye,
-        Saltire,
-    }
-    impl BoutenStyle {
-        pub fn of(name: &str) -> Result<Self> {
-            match name {
-                "" => Ok(Self::SesameDot),
-                "白ゴマ" => Ok(Self::WhiteSesameDot),
-                "丸" => Ok(Self::BlackCircle),
-                "白丸" => Ok(Self::WhiteCircle),
-                "黒三角" => Ok(Self::BlackUpPointingTriangle),
-                "白三角" => Ok(Self::WhiteUpPointingTriangle),
-                "二重丸" => Ok(Self::Bullseye),
-                "蛇の目" => Ok(Self::Fisheye),
-                "ばつ" => Ok(Self::Saltire),
-                name => bail!("Unknown bouten style: {}", name),
-            }
-        }
+    pub enum BouDecorationSide {
+        Left,
+        Right,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub enum BoutenSide {
-        Left,
-        Right,
+    pub enum BouDecorationStyle {
+        // 傍点 https://www.aozora.gr.jp/annotation/emphasis.html#boten_chuki
+        SesameDotBouten,
+        WhiteSesameDotBouten,
+        BlackCircleBouten,
+        WhiteCircleBouten,
+        BlackUpPointingTriangleBouten,
+        WhiteUpPointingTriangleBouten,
+        BullseyeBouten,
+        FisheyeBouten,
+        SaltireBouten,
+
+        // 傍線 https://www.aozora.gr.jp/annotation/emphasis.html#bosen_chuki
+        SolidBousen,
+        DoubleBousen,
+        DottedBousen,
+        DashedBousen,
+        WaveBousen,
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub enum BookContentElement {
     String {
@@ -187,19 +178,19 @@ pub enum BookContentElement {
         value: String,
     },
 
-    // 傍点
-    Bouten {
+    // 傍点・傍線
+    BouDecoration {
         target: Vec<BookContentElement>,
-        style: book_content_element_util::BoutenStyle,
-        side: book_content_element_util::BoutenSide,
+        style: book_content_element_util::BouDecorationStyle,
+        side: book_content_element_util::BouDecorationSide,
     },
-    BoutenStart {
-        style: book_content_element_util::BoutenStyle,
-        side: book_content_element_util::BoutenSide,
+    BouDecorationStart {
+        style: book_content_element_util::BouDecorationStyle,
+        side: book_content_element_util::BouDecorationSide,
     },
-    BoutenEnd {
-        style: book_content_element_util::BoutenStyle,
-        side: book_content_element_util::BoutenSide,
+    BouDecorationEnd {
+        style: book_content_element_util::BouDecorationStyle,
+        side: book_content_element_util::BouDecorationSide,
     },
 
     // ［＃割り注］

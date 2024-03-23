@@ -4,7 +4,7 @@ use regex::Regex;
 
 use crate::{
     book_content::{
-        book_content_element_util::{BoutenStyle, MidashiLevel, MidashiStyle},
+        book_content_element_util::{BouDecorationStyle, MidashiLevel, MidashiStyle},
         BookContentElement,
     },
     ruby_txt::{ruby_txt_parser::parse_block, ruby_txt_tokenizer::RubyTxtToken},
@@ -97,22 +97,8 @@ pub(super) fn parse_annotation<'a>(
         //     }
         // }
 
-        static REGEX_BOUTEN: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"」(?P<left>の左)?に(?P<style>.*)傍点$").unwrap());
-        if let Some(caps) = REGEX_BOUTEN.captures(last_arg) {
-            ensure!(first_arg.starts_with("「"), "Invalid bouten: {:?}", args);
-
-            let style = match BoutenStyle::of(caps.name("style").unwrap().as_str()) {
-                Ok(style) => style,
-                Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
-            };
-            let side = match caps.name("left") {
-                Some(left) => {
-                    assert_eq!(left.as_str(), "の左");
-                    crate::book_content::book_content_element_util::BoutenSide::Left
-                }
-                None => crate::book_content::book_content_element_util::BoutenSide::Right,
-            };
+        // "「Vec<BookContentElement>」String" 型
+        if first_arg.starts_with('「') && last_arg.contains('」') {
             let target = match args.len() {
                 1 => {
                     let l = "「".len();
@@ -123,7 +109,7 @@ pub(super) fn parse_annotation<'a>(
                 }
 
                 _ => {
-                    ensure!(args.len() != 2, "Invalid bouten: {:?}", args);
+                    ensure!(args.len() != 2, "Invalid bou decoration: {:?}", args);
 
                     let first = if "「".len() < first_arg.len() {
                         Some(BookContentElement::String {
@@ -150,8 +136,9 @@ pub(super) fn parse_annotation<'a>(
                         target.push(first);
                     }
 
-                    let mut args = args;
-                    target.extend(args.drain(1..(args.len() - 1)));
+                    for arg in &args[1..(args.len() - 1)] {
+                        target.push(arg.clone());
+                    }
 
                     if let Some(last) = last {
                         target.push(last);
@@ -161,11 +148,31 @@ pub(super) fn parse_annotation<'a>(
                 }
             };
 
-            return Ok(Some(BookContentElement::Bouten {
-                target,
-                style: style.clone(),
-                side: side.clone(),
-            }));
+            let annotation_name = last_arg[last_arg.rfind('」').unwrap()..].to_string();
+
+            static REGEX_BOU_DECORATION: Lazy<Regex> =
+                Lazy::new(|| Regex::new(r"」(?P<left>の左)?に(?P<style>.*(点|線))$").unwrap());
+            if let Some(caps) = REGEX_BOU_DECORATION.captures(&annotation_name) {
+                let style = match bou_decoration_style_of(caps.name("style").unwrap().as_str()) {
+                    Ok(style) => style,
+                    Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
+                };
+                let side = match caps.name("left") {
+                    Some(left) => {
+                        assert_eq!(left.as_str(), "の左");
+                        crate::book_content::book_content_element_util::BouDecorationSide::Left
+                    }
+                    None => {
+                        crate::book_content::book_content_element_util::BouDecorationSide::Right
+                    }
+                };
+
+                return Ok(Some(BookContentElement::BouDecoration {
+                    target,
+                    style,
+                    side,
+                }));
+            }
         }
 
         // TODO
@@ -387,38 +394,38 @@ pub(super) fn parse_annotation<'a>(
             }));
         }
 
-        static REGEX_BOUTEN_START: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*)傍点$").unwrap());
-        if let Some(caps) = REGEX_BOUTEN_START.captures(&arg) {
-            let style = match BoutenStyle::of(caps.name("style").unwrap().as_str()) {
+        static REGEX_BOU_DECORATION_START: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*(点|線))$").unwrap());
+        if let Some(caps) = REGEX_BOU_DECORATION_START.captures(&arg) {
+            let style = match bou_decoration_style_of(caps.name("style").unwrap().as_str()) {
                 Ok(style) => style,
                 Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
             };
             let side = match caps.name("left") {
                 Some(left) => {
                     assert_eq!(left.as_str(), "左に");
-                    crate::book_content::book_content_element_util::BoutenSide::Left
+                    crate::book_content::book_content_element_util::BouDecorationSide::Left
                 }
-                None => crate::book_content::book_content_element_util::BoutenSide::Right,
+                None => crate::book_content::book_content_element_util::BouDecorationSide::Right,
             };
-            return Ok(Some(BookContentElement::BoutenStart { style, side }));
+            return Ok(Some(BookContentElement::BouDecorationStart { style, side }));
         }
 
-        static REGEX_BOUTEN_END: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*)傍点終わり$").unwrap());
-        if let Some(caps) = REGEX_BOUTEN_END.captures(&arg) {
-            let style = match BoutenStyle::of(caps.name("style").unwrap().as_str()) {
+        static REGEX_BOU_DECORATION_END: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^(?P<left>左に)?(?P<style>.*(点|線))終わり$").unwrap());
+        if let Some(caps) = REGEX_BOU_DECORATION_END.captures(&arg) {
+            let style = match bou_decoration_style_of(caps.name("style").unwrap().as_str()) {
                 Ok(style) => style,
                 Err(_) => return Ok(Some(BookContentElement::UnknownAnnotation { args })),
             };
             let side = match caps.name("left") {
                 Some(left) => {
                     assert_eq!(left.as_str(), "左に");
-                    crate::book_content::book_content_element_util::BoutenSide::Left
+                    crate::book_content::book_content_element_util::BouDecorationSide::Left
                 }
-                None => crate::book_content::book_content_element_util::BoutenSide::Right,
+                None => crate::book_content::book_content_element_util::BouDecorationSide::Right,
             };
-            return Ok(Some(BookContentElement::BoutenEnd { style, side }));
+            return Ok(Some(BookContentElement::BouDecorationEnd { style, side }));
         }
 
         if arg == "割り注" {
@@ -433,4 +440,24 @@ pub(super) fn parse_annotation<'a>(
     })()?;
 
     Ok((tokens, annotation))
+}
+
+fn bou_decoration_style_of(name: &str) -> Result<BouDecorationStyle> {
+    match name {
+        "傍点" => Ok(BouDecorationStyle::SesameDotBouten),
+        "白ゴマ傍点" => Ok(BouDecorationStyle::WhiteSesameDotBouten),
+        "丸傍点" => Ok(BouDecorationStyle::BlackCircleBouten),
+        "白丸傍点" => Ok(BouDecorationStyle::WhiteCircleBouten),
+        "黒三角傍点" => Ok(BouDecorationStyle::BlackUpPointingTriangleBouten),
+        "白三角傍点" => Ok(BouDecorationStyle::WhiteUpPointingTriangleBouten),
+        "二重丸傍点" => Ok(BouDecorationStyle::BullseyeBouten),
+        "蛇の目傍点" => Ok(BouDecorationStyle::FisheyeBouten),
+        "ばつ傍点" => Ok(BouDecorationStyle::SaltireBouten),
+        "傍線" => Ok(BouDecorationStyle::SolidBousen),
+        "二重傍線" => Ok(BouDecorationStyle::DoubleBousen),
+        "鎖線" => Ok(BouDecorationStyle::DottedBousen),
+        "破線" => Ok(BouDecorationStyle::DashedBousen),
+        "波線" => Ok(BouDecorationStyle::WaveBousen),
+        name => bail!("Unknown bou-decoration style: {}", name),
+    }
 }
