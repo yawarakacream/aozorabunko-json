@@ -1,8 +1,3 @@
-pub mod jis_x_0213;
-pub mod list_person_all_extended_csv;
-pub mod ruby_txt;
-pub mod utility;
-
 use anyhow::{bail, ensure, Context, Result};
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use std::{
@@ -12,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{
+use aozorabunko_json::{
     list_person_all_extended_csv::parser::parse_list_person_all_extended_csv,
     ruby_txt::{parser::parse_ruby_txt, renderer::render_ruby_txt, tokenizer::tokenize_ruby_txt},
     utility::ZipReader,
@@ -216,13 +211,13 @@ fn main() -> Result<()> {
                     let content = parse_ruby_txt(&content)?;
                     fs::write(
                         &book_directory_path.join("ruby-txt_parsed.json"),
-                        serde_json::to_string_pretty(&content)?,
+                        serde_json::to_string(&content)?,
                     )?;
 
                     let content = render_ruby_txt(&content)?;
                     fs::write(
                         &book_directory_path.join("ruby-txt_rendered.json"),
-                        serde_json::to_string_pretty(&content)?,
+                        serde_json::to_string(&content)?,
                     )?;
                 }
 
