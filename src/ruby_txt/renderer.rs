@@ -28,24 +28,101 @@ pub fn render_ruby_txt(parsed: &ParsedRubyTxt) -> Result<RenderedRubyTxt> {
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PageStyle {
+    Continuous,
+    Kaicho,      // 改丁
+    Kaipage,     // 改ページ
+    Kaimihiraki, // 改見開き
+    Kaidan,      // 改段
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Jisage {
+    first: usize,
+    left: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct RenderedRubyTxtLine {
-    pub components: Vec<RenderedRubyTxtComponent>,
+    // ページに対する状態
+    page_style: PageStyle,
+    // 字下げ
+    jisage: Jisage,
+
+    // 主要素
+    components: Vec<RenderedRubyTxtComponent>,
+
+    // 地付き
+    // 行毎に格納
+    jitsuki: Vec<Vec<RenderedRubyTxtComponent>>,
 }
 
 impl RenderedRubyTxtLine {
     fn new() -> Self {
         Self {
+            page_style: PageStyle::Continuous,
+            jisage: Jisage { first: 0, left: 0 },
+
             components: Vec::new(),
+
+            jitsuki: Vec::new(),
         }
+    }
+
+    fn extract_components(self) -> Result<Vec<RenderedRubyTxtComponent>> {
+        ensure!(self.is_default_layout(), "layout is not default");
+        ensure!(self.jitsuki.is_empty(), "jitsuki is not empty");
+        Ok(self.components)
+    }
+
+    fn is_default_layout(&self) -> bool {
+        self.page_style == PageStyle::Continuous && self.jisage == Jisage { first: 0, left: 0 }
+    }
+
+    fn set_page_style(&mut self, page_style: PageStyle) -> Result<()> {
+        ensure!(self.is_empty(), "Cannot set pasing to non-empty line");
+        ensure!(
+            self.page_style == PageStyle::Continuous,
+            "page-style already set: {:?}, given {:?}",
+            self.page_style,
+            page_style
+        );
+        self.page_style = page_style;
+        Ok(())
+    }
+
+    fn set_jisage(&mut self, jisage: Jisage) -> Result<()> {
+        ensure!(self.is_empty(), "Cannot set pasing to non-empty line");
+        ensure!(
+            self.jisage == Jisage { first: 0, left: 0 },
+            "jisage already set: {:?}, given {:?}",
+            self.jisage,
+            jisage
+        );
+        self.jisage = jisage;
+        Ok(())
+    }
+
+    fn set_jitsuki(&mut self, jitsuki: Vec<Vec<RenderedRubyTxtComponent>>) -> Result<()> {
+        ensure!(
+            self.jitsuki.is_empty(),
+            "jisage already set: {:?}, given {:?}",
+            self.jitsuki,
+            jitsuki
+        );
+        self.jitsuki = jitsuki;
+        Ok(())
     }
 
     fn is_empty(&self) -> bool {
         self.components.is_empty()
     }
 
-    pub fn push(&mut self, component: RenderedRubyTxtComponent) {
+    fn push(&mut self, component: RenderedRubyTxtComponent) {
         if let RenderedRubyTxtComponent::String { value } = component {
             self.push_str(&value);
         } else {
@@ -53,17 +130,7 @@ impl RenderedRubyTxtLine {
         }
     }
 
-    pub fn push_char(&mut self, ch: char) {
-        if let Some(RenderedRubyTxtComponent::String { value }) = self.components.last_mut() {
-            value.push(ch);
-        } else {
-            self.components.push(RenderedRubyTxtComponent::String {
-                value: ch.to_string(),
-            });
-        }
-    }
-
-    pub fn push_str(&mut self, string: &str) {
+    fn push_str(&mut self, string: &str) {
         if let Some(RenderedRubyTxtComponent::String { value }) = self.components.last_mut() {
             value.push_str(string)
         } else {
@@ -73,7 +140,7 @@ impl RenderedRubyTxtLine {
         }
     }
 
-    pub fn pop(&mut self) -> Option<RenderedRubyTxtComponent> {
+    fn pop(&mut self) -> Option<RenderedRubyTxtComponent> {
         self.components.pop()
     }
 }
@@ -105,6 +172,9 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
 
     let mut lines = vec![RenderedRubyTxtLine::new()];
 
+    // ブロックで宣言されたレイアウト
+    let mut jisage: Option<Jisage> = None;
+
     while !elements.is_empty() {
         match &elements[0] {
             ParsedRubyTxtElement::String { value } => {
@@ -113,12 +183,18 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::NewLine => {
-                lines.push(RenderedRubyTxtLine::new());
+                let mut line = RenderedRubyTxtLine::new();
+
+                if let Some(jisage) = &jisage {
+                    line.set_jisage(jisage.clone()).unwrap();
+                }
+                lines.push(line);
+
                 elements = &elements[1..];
             }
 
             ParsedRubyTxtElement::UnknownAnnotation { args } => {
-                let args = render_line(&args.iter().map(|a| a).collect::<Vec<_>>())
+                let args = render_line_components(&args.iter().map(|a| a).collect::<Vec<_>>())
                     .with_context(|| format!("Failed to render unknown annotation: {:?}", args))?;
 
                 lines
@@ -144,9 +220,11 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                         ParsedRubyTxtElement::NewLine => break false,
 
                         ParsedRubyTxtElement::Ruby { value } => {
-                            let ruby = render_line(&value.iter().map(|v| v).collect::<Vec<_>>())
-                                .with_context(|| format!("Failed to render ruby: {:?}", value))?;
-                            let children = render_line(&target).with_context(|| {
+                            let ruby = render_line_components(
+                                &value.iter().map(|v| v).collect::<Vec<_>>(),
+                            )
+                            .with_context(|| format!("Failed to render ruby: {:?}", value))?;
+                            let children = render_line_components(&target).with_context(|| {
                                 format!("Failed to render ruby children: {:?}", value)
                             })?;
                             line.push(RenderedRubyTxtComponent::Ruby { ruby, children });
@@ -170,11 +248,13 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::Ruby { value } => {
-                let ruby = render_line(&value.iter().map(|v| v).collect::<Vec<_>>())
+                let ruby = render_line_components(&value.iter().map(|v| v).collect::<Vec<_>>())
                     .with_context(|| format!("Failed to render ruby: {:?}", value))?;
 
                 let line = lines.last_mut().unwrap();
-                let last = line.pop().context("Cannod find String to set ruby")?;
+                let last = line
+                    .pop()
+                    .with_context(|| format!("Cannod find elements to set ruby {:?}", ruby))?;
                 match last {
                     RenderedRubyTxtComponent::String { value } => {
                         let value_chars: Vec<_> = value.chars().collect();
@@ -216,6 +296,169 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 elements = &elements[1..];
             }
 
+            ParsedRubyTxtElement::KaichoAttention => {
+                ensure!(
+                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    "Invalid kaicho"
+                );
+                elements = &elements[2..];
+
+                lines
+                    .last_mut()
+                    .unwrap()
+                    .set_page_style(PageStyle::Kaicho)?;
+            }
+
+            ParsedRubyTxtElement::KaipageAttention => {
+                ensure!(
+                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    "Invalid kaipage"
+                );
+                elements = &elements[2..];
+
+                lines
+                    .last_mut()
+                    .unwrap()
+                    .set_page_style(PageStyle::Kaipage)?;
+            }
+
+            ParsedRubyTxtElement::KaimihirakiAttention => {
+                ensure!(
+                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    "Invalid kaimihiraki"
+                );
+                elements = &elements[2..];
+
+                lines
+                    .last_mut()
+                    .unwrap()
+                    .set_page_style(PageStyle::Kaimihiraki)?;
+            }
+
+            ParsedRubyTxtElement::KaidanAttention => {
+                ensure!(
+                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    "Invalid kaidan"
+                );
+                elements = &elements[2..];
+
+                lines
+                    .last_mut()
+                    .unwrap()
+                    .set_page_style(PageStyle::Kaidan)?;
+            }
+
+            ParsedRubyTxtElement::JisageAnnotation { level } => {
+                ensure!(jisage.is_none(), "Cannot set jisage in jisage block");
+                elements = &elements[1..];
+
+                lines
+                    .last_mut()
+                    .unwrap()
+                    .set_jisage(Jisage {
+                        first: *level,
+                        left: *level,
+                    })
+                    .context("Failed to set jisage")?;
+            }
+
+            ParsedRubyTxtElement::JisageStartAnnotation { level } => {
+                ensure!(lines.pop().unwrap().is_empty(), "Invalid jisage-start");
+                elements = &elements[1..];
+
+                jisage = Some(Jisage {
+                    first: *level,
+                    left: *level,
+                });
+            }
+
+            ParsedRubyTxtElement::JisageWithOrikaeshiStartAnnotation { level0, level1 } => {
+                ensure!(
+                    lines.pop().unwrap().is_empty(),
+                    "Invalid jisage-with-orikaeshi-start"
+                );
+                elements = &elements[1..];
+
+                jisage = Some(Jisage {
+                    first: *level0,
+                    left: *level1,
+                });
+            }
+
+            ParsedRubyTxtElement::JisageAfterTentsukiStartAnnotation { level } => {
+                ensure!(
+                    lines.pop().unwrap().is_empty(),
+                    "Invalid jisage-after-tentsuki-start"
+                );
+                elements = &elements[1..];
+
+                jisage = Some(Jisage {
+                    first: 0,
+                    left: *level,
+                });
+            }
+
+            ParsedRubyTxtElement::JisageEndAnnotation => {
+                ensure!(lines.pop().unwrap().is_empty(), "Invalid jisage-end");
+                elements = &elements[1..];
+
+                jisage = None;
+            }
+
+            ParsedRubyTxtElement::JitsukiAnnotation => {
+                elements = &elements[1..];
+
+                let mut jitsuki = Vec::new();
+                while !elements.is_empty() {
+                    if matches!(elements[0], ParsedRubyTxtElement::NewLine) {
+                        break;
+                    }
+                    jitsuki.push(elements[0]);
+                    elements = &elements[1..];
+                }
+
+                let jitsuki = render_line_components(&jitsuki)?;
+                lines.last_mut().unwrap().set_jitsuki(vec![jitsuki])?;
+            }
+
+            ParsedRubyTxtElement::JitsukiStartAnnotation => {
+                ensure!(lines.pop().unwrap().is_empty(), "Invalid jitsuki-start");
+                ensure!(
+                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    "Invalid jitsuki-start"
+                );
+                elements = &elements[2..];
+
+                let mut jitsuki = Vec::new();
+                while !elements.is_empty() {
+                    let el = elements[0];
+                    elements = &elements[1..];
+
+                    if matches!(el, ParsedRubyTxtElement::JitsukiEndAnnotation) {
+                        break;
+                    }
+                    jitsuki.push(el);
+                }
+
+                ensure!(
+                    matches!(
+                        jitsuki.pop().context("Empty jitsuki block")?,
+                        ParsedRubyTxtElement::NewLine
+                    ),
+                    "Invalid jitsuki-end"
+                );
+
+                let jitsuki: Result<Vec<_>> = render_block(&jitsuki)?
+                    .into_iter()
+                    .map(|line| line.extract_components())
+                    .collect();
+                lines.last_mut().unwrap().set_jitsuki(jitsuki?)?;
+            }
+
+            ParsedRubyTxtElement::JitsukiEndAnnotation => {
+                bail!("Invalid jitsuki-end: Missing jitsuki-start");
+            }
+
             _ => {
                 lines
                     .last_mut()
@@ -238,9 +481,12 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
     Ok(lines)
 }
 
-fn render_line(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRubyTxtComponent>> {
+fn render_line_components(
+    elements: &[&ParsedRubyTxtElement],
+) -> Result<Vec<RenderedRubyTxtComponent>> {
     let lines = render_block(elements)?;
     ensure!(!lines.is_empty(), "Empty block");
     ensure!(lines.len() == 1, "Not line");
-    Ok(lines.into_iter().nth(0).unwrap().components)
+
+    lines.into_iter().nth(0).unwrap().extract_components()
 }
