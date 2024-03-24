@@ -252,7 +252,11 @@ pub fn parse_ruby_txt(tokens: &[RubyTxtToken]) -> Result<ParsedRubyTxt> {
             // ブロックの境は改ページにする
             if let Some(last) = elements.last() {
                 if !matches!(last, ParsedRubyTxtElement::KaipageAttention) {
+                    if !matches!(last, ParsedRubyTxtElement::NewLine) {
+                        elements.push(ParsedRubyTxtElement::NewLine);
+                    }
                     elements.push(ParsedRubyTxtElement::KaipageAttention);
+                    elements.push(ParsedRubyTxtElement::NewLine);
                 }
             }
 

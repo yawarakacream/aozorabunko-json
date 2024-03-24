@@ -28,6 +28,7 @@ pub fn render_ruby_txt(parsed: &ParsedRubyTxt) -> Result<RenderedRubyTxt> {
     })
 }
 
+// ページに対する状態
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PageStyle {
@@ -38,49 +39,65 @@ pub enum PageStyle {
     Kaidan,      // 改段
 }
 
+// 字下げ
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Jisage {
-    first: usize,
-    left: usize,
+    level0: usize, // 最初の行
+    level1: usize, // 残りの行
+}
+
+// 地寄せ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Jiyose {
+    level: usize, // 0 なら地付き
+    lines: Vec<Vec<RenderedRubyTxtComponent>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct RenderedRubyTxtLine {
-    // ページに対する状態
     page_style: PageStyle,
-    // 字下げ
     jisage: Jisage,
 
     // 主要素
     components: Vec<RenderedRubyTxtComponent>,
 
-    // 地付き
-    // 行毎に格納
-    jitsuki: Vec<Vec<RenderedRubyTxtComponent>>,
+    // 字寄せ
+    jiyose: Option<Jiyose>,
 }
 
 impl RenderedRubyTxtLine {
     fn new() -> Self {
         Self {
             page_style: PageStyle::Continuous,
-            jisage: Jisage { first: 0, left: 0 },
+            jisage: Jisage {
+                level0: 0,
+                level1: 0,
+            },
 
             components: Vec::new(),
 
-            jitsuki: Vec::new(),
+            jiyose: None,
         }
     }
 
     fn extract_components(self) -> Result<Vec<RenderedRubyTxtComponent>> {
-        ensure!(self.is_default_layout(), "layout is not default");
-        ensure!(self.jitsuki.is_empty(), "jitsuki is not empty");
+        ensure!(
+            self.page_style == PageStyle::Continuous,
+            "page-style is not default"
+        );
+        ensure!(
+            self.jisage
+                == Jisage {
+                    level0: 0,
+                    level1: 0,
+                },
+            "jisage is not default"
+        );
+        ensure!(self.jiyose.is_none(), "jiyose is not empty");
         Ok(self.components)
-    }
-
-    fn is_default_layout(&self) -> bool {
-        self.page_style == PageStyle::Continuous && self.jisage == Jisage { first: 0, left: 0 }
     }
 
     fn set_page_style(&mut self, page_style: PageStyle) -> Result<()> {
@@ -96,9 +113,13 @@ impl RenderedRubyTxtLine {
     }
 
     fn set_jisage(&mut self, jisage: Jisage) -> Result<()> {
-        ensure!(self.is_empty(), "Cannot set pasing to non-empty line");
+        ensure!(self.is_empty(), "Cannot set jisage to non-empty line");
         ensure!(
-            self.jisage == Jisage { first: 0, left: 0 },
+            self.jisage
+                == Jisage {
+                    level0: 0,
+                    level1: 0
+                },
             "jisage already set: {:?}, given {:?}",
             self.jisage,
             jisage
@@ -107,14 +128,14 @@ impl RenderedRubyTxtLine {
         Ok(())
     }
 
-    fn set_jitsuki(&mut self, jitsuki: Vec<Vec<RenderedRubyTxtComponent>>) -> Result<()> {
+    fn set_jiyose(&mut self, jiyose: Jiyose) -> Result<()> {
         ensure!(
-            self.jitsuki.is_empty(),
-            "jisage already set: {:?}, given {:?}",
-            self.jitsuki,
-            jitsuki
+            self.jiyose.is_none(),
+            "jiyose already set: {:?}, given {:?}",
+            self.jiyose,
+            jiyose
         );
-        self.jitsuki = jitsuki;
+        self.jiyose = Some(jiyose);
         Ok(())
     }
 
@@ -173,7 +194,7 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
     let mut lines = vec![RenderedRubyTxtLine::new()];
 
     // ブロックで宣言されたレイアウト
-    let mut jisage: Option<Jisage> = None;
+    let mut global_jisage: Option<Jisage> = None;
 
     while !elements.is_empty() {
         match &elements[0] {
@@ -185,8 +206,8 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             ParsedRubyTxtElement::NewLine => {
                 let mut line = RenderedRubyTxtLine::new();
 
-                if let Some(jisage) = &jisage {
-                    line.set_jisage(jisage.clone()).unwrap();
+                if let Some(global_jisage) = &global_jisage {
+                    line.set_jisage(global_jisage.clone()).unwrap();
                 }
                 lines.push(line);
 
@@ -297,11 +318,16 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::KaichoAttention => {
+                elements = &elements[1..];
+                if elements.is_empty() {
+                    continue;
+                }
+
                 ensure!(
-                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    matches!(elements[0], ParsedRubyTxtElement::NewLine),
                     "Invalid kaicho"
                 );
-                elements = &elements[2..];
+                elements = &elements[1..];
 
                 lines
                     .last_mut()
@@ -310,11 +336,16 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::KaipageAttention => {
+                elements = &elements[1..];
+                if elements.is_empty() {
+                    continue;
+                }
+
                 ensure!(
-                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    matches!(elements[0], ParsedRubyTxtElement::NewLine),
                     "Invalid kaipage"
                 );
-                elements = &elements[2..];
+                elements = &elements[1..];
 
                 lines
                     .last_mut()
@@ -323,11 +354,16 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::KaimihirakiAttention => {
+                elements = &elements[1..];
+                if elements.is_empty() {
+                    continue;
+                }
+
                 ensure!(
-                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    matches!(elements[0], ParsedRubyTxtElement::NewLine),
                     "Invalid kaimihiraki"
                 );
-                elements = &elements[2..];
+                elements = &elements[1..];
 
                 lines
                     .last_mut()
@@ -336,11 +372,16 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::KaidanAttention => {
+                elements = &elements[1..];
+                if elements.is_empty() {
+                    continue;
+                }
+
                 ensure!(
-                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    matches!(elements[0], ParsedRubyTxtElement::NewLine),
                     "Invalid kaidan"
                 );
-                elements = &elements[2..];
+                elements = &elements[1..];
 
                 lines
                     .last_mut()
@@ -349,26 +390,34 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             }
 
             ParsedRubyTxtElement::JisageAnnotation { level } => {
-                ensure!(jisage.is_none(), "Cannot set jisage in jisage block");
                 elements = &elements[1..];
 
-                lines
-                    .last_mut()
-                    .unwrap()
-                    .set_jisage(Jisage {
-                        first: *level,
-                        left: *level,
-                    })
-                    .context("Failed to set jisage")?;
+                ensure!(lines.pop().unwrap().is_empty(), "Invalid one-line jisage");
+
+                let jisage = if let Some(global_jisage) = &global_jisage {
+                    Jisage {
+                        level0: *level + global_jisage.level0,
+                        level1: *level + global_jisage.level1,
+                    }
+                } else {
+                    Jisage {
+                        level0: *level,
+                        level1: *level,
+                    }
+                };
+
+                let mut line = RenderedRubyTxtLine::new();
+                line.set_jisage(jisage)?;
+                lines.push(line);
             }
 
             ParsedRubyTxtElement::JisageStartAnnotation { level } => {
                 ensure!(lines.pop().unwrap().is_empty(), "Invalid jisage-start");
                 elements = &elements[1..];
 
-                jisage = Some(Jisage {
-                    first: *level,
-                    left: *level,
+                global_jisage = Some(Jisage {
+                    level0: *level,
+                    level1: *level,
                 });
             }
 
@@ -379,9 +428,9 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 );
                 elements = &elements[1..];
 
-                jisage = Some(Jisage {
-                    first: *level0,
-                    left: *level1,
+                global_jisage = Some(Jisage {
+                    level0: *level0,
+                    level1: *level1,
                 });
             }
 
@@ -392,33 +441,38 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 );
                 elements = &elements[1..];
 
-                jisage = Some(Jisage {
-                    first: 0,
-                    left: *level,
+                global_jisage = Some(Jisage {
+                    level0: 0,
+                    level1: *level,
                 });
             }
 
             ParsedRubyTxtElement::JisageEndAnnotation => {
                 ensure!(lines.pop().unwrap().is_empty(), "Invalid jisage-end");
-                elements = &elements[1..];
 
-                jisage = None;
+                // 規格外の注記で字下げが始まっている可能性があるのでエラーにしない
+                elements = &elements[1..];
+                global_jisage = None;
             }
 
             ParsedRubyTxtElement::JitsukiAnnotation => {
                 elements = &elements[1..];
 
-                let mut jitsuki = Vec::new();
+                let mut jitsuki_elements = Vec::new();
                 while !elements.is_empty() {
                     if matches!(elements[0], ParsedRubyTxtElement::NewLine) {
                         break;
                     }
-                    jitsuki.push(elements[0]);
+                    jitsuki_elements.push(elements[0]);
                     elements = &elements[1..];
                 }
 
-                let jitsuki = render_line_components(&jitsuki)?;
-                lines.last_mut().unwrap().set_jitsuki(vec![jitsuki])?;
+                let jitsuki_line = render_line_components(&jitsuki_elements)
+                    .context("Failed to render a line with jitsuki")?;
+                lines.last_mut().unwrap().set_jiyose(Jiyose {
+                    level: 0,
+                    lines: vec![jitsuki_line],
+                })?;
             }
 
             ParsedRubyTxtElement::JitsukiStartAnnotation => {
@@ -429,7 +483,7 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 );
                 elements = &elements[2..];
 
-                let mut jitsuki = Vec::new();
+                let mut jitsuki_elements = Vec::new();
                 while !elements.is_empty() {
                     let el = elements[0];
                     elements = &elements[1..];
@@ -437,26 +491,98 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                     if matches!(el, ParsedRubyTxtElement::JitsukiEndAnnotation) {
                         break;
                     }
-                    jitsuki.push(el);
+                    jitsuki_elements.push(el);
                 }
 
+                // "［＃ここで地付き終わり］" 前の改行を取り除く
                 ensure!(
                     matches!(
-                        jitsuki.pop().context("Empty jitsuki block")?,
+                        jitsuki_elements.pop().context("Empty jitsuki block")?,
                         ParsedRubyTxtElement::NewLine
                     ),
                     "Invalid jitsuki-end"
                 );
 
-                let jitsuki: Result<Vec<_>> = render_block(&jitsuki)?
+                // 地付きブロックは全行を既にある 1 行に入れる
+                let jitsuki_lines: Result<Vec<_>> = render_block(&jitsuki_elements)?
                     .into_iter()
                     .map(|line| line.extract_components())
                     .collect();
-                lines.last_mut().unwrap().set_jitsuki(jitsuki?)?;
+                lines.last_mut().unwrap().set_jiyose(Jiyose {
+                    level: 0,
+                    lines: jitsuki_lines?,
+                })?;
             }
 
             ParsedRubyTxtElement::JitsukiEndAnnotation => {
-                bail!("Invalid jitsuki-end: Missing jitsuki-start");
+                // 規格外の注記で地付きが始まっている可能性があるのでエラーにしない
+                elements = &elements[1..];
+            }
+
+            ParsedRubyTxtElement::JiyoseAnnotation { level } => {
+                elements = &elements[1..];
+
+                let mut jiyose_elements = Vec::new();
+                while !elements.is_empty() {
+                    if matches!(elements[0], ParsedRubyTxtElement::NewLine) {
+                        break;
+                    }
+                    jiyose_elements.push(elements[0]);
+                    elements = &elements[1..];
+                }
+
+                let jiyose_line = render_line_components(&jiyose_elements)
+                    .context("Failed to render a line with jiyose")?;
+                lines.last_mut().unwrap().set_jiyose(Jiyose {
+                    level: *level,
+                    lines: vec![jiyose_line],
+                })?;
+            }
+
+            ParsedRubyTxtElement::JiyoseStartAnnotation { level } => {
+                ensure!(lines.pop().unwrap().is_empty(), "Invalid jiyose-start");
+                ensure!(
+                    matches!(elements.get(1), Some(ParsedRubyTxtElement::NewLine)),
+                    "Invalid jiyose-start"
+                );
+                elements = &elements[2..];
+
+                let mut jiyose_elements = Vec::new();
+                while !elements.is_empty() {
+                    let el = elements[0];
+                    elements = &elements[1..];
+
+                    if matches!(el, ParsedRubyTxtElement::JiyoseEndAnnotation) {
+                        break;
+                    }
+                    jiyose_elements.push(el);
+                }
+
+                // "［＃ここで字上げ終わり］" 前の改行を取り除く
+                ensure!(
+                    matches!(
+                        jiyose_elements.pop().context("Empty jiyose block")?,
+                        ParsedRubyTxtElement::NewLine
+                    ),
+                    "Invalid jiyose-end"
+                );
+
+                // 地寄せブロックは 1 行につき 1 行
+                for jiyose_line in render_block(&jiyose_elements)? {
+                    let jiyose_line = jiyose_line.extract_components()?;
+
+                    let mut line = RenderedRubyTxtLine::new();
+                    line.set_jiyose(Jiyose {
+                        level: *level,
+                        lines: vec![jiyose_line],
+                    })?;
+                    lines.push(line);
+                }
+            }
+
+            ParsedRubyTxtElement::JiyoseEndAnnotation => {
+                // 規格外の注記で地寄せが始まっている可能性があるのでエラーにしない
+                elements = &elements[1..];
             }
 
             _ => {
