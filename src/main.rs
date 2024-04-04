@@ -8,14 +8,20 @@ use std::{
 };
 
 use aozorabunko_json::{
-    list_person_all_extended_csv::parser::parse_list_person_all_extended_csv,
-    ruby_txt::{parser::parse_ruby_txt, renderer::render_ruby_txt, tokenizer::tokenize_ruby_txt},
+    list_person_all_extended_csv::parser::{
+        parse_list_person_all_extended_csv, AozorabunkoIndexList,
+    },
+    ruby_txt::{
+        parser::{parse_ruby_txt, ParsedRubyTxt},
+        renderer::{render_ruby_txt, RenderedRubyTxt},
+        tokenizer::tokenize_ruby_txt,
+    },
     utility::zip::ZipReader,
 };
 
 struct Args {
     aozorabunko_path: String,
-    output_path: String,
+    output_path: Option<String>,
 }
 
 fn get_args() -> Result<Args> {
@@ -28,17 +34,81 @@ fn get_args() -> Result<Args> {
         Err(f) => bail!(f),
     };
 
-    if matches.free.len() != 2 {
-        bail!("path to aozorabunko repository and output are required.")
-    }
-
-    let aozorabunko_path = matches.free[0].clone();
-    let output_path = matches.free[1].clone();
+    let aozorabunko_path = matches
+        .free
+        .get(0)
+        .context("path to aozorabunko repository is required")?
+        .clone();
+    let output_path = matches.free.get(1).map(|s| s.clone());
 
     Ok(Args {
         aozorabunko_path,
         output_path,
     })
+}
+
+enum BuildOut {
+    Null,
+    File { root: PathBuf },
+}
+
+impl BuildOut {
+    fn init_file(root: &str) -> Result<Self> {
+        let root = PathBuf::from(&root);
+        fs::create_dir(&root).context("Failed to create output directory")?;
+
+        Ok(Self::File { root })
+    }
+
+    fn save_aozorabunko_index_list(
+        &self,
+        aozorabunko_index_list: &AozorabunkoIndexList,
+    ) -> Result<()> {
+        if let BuildOut::File { root } = &self {
+            fs::write(
+                &root.join("books.json"),
+                serde_json::to_string(&aozorabunko_index_list.books)?,
+            )?;
+
+            fs::write(
+                &root.join("authors.json"),
+                serde_json::to_string(&aozorabunko_index_list.authors)?,
+            )?;
+
+            fs::write(
+                &root.join("book_authors.json"),
+                serde_json::to_string(&aozorabunko_index_list.book_authors)?,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn save_book_ruby_txt(
+        &self,
+        book_id: usize,
+        parsed: &ParsedRubyTxt,
+        rendered: &RenderedRubyTxt,
+    ) -> Result<()> {
+        if let BuildOut::File { root } = &self {
+            let book_directory_path = &root.join(format!("book/{}", book_id));
+            fs::create_dir_all(&book_directory_path).unwrap();
+
+            fs::write(
+                &book_directory_path.join("ruby-txt_parsed.json"),
+                serde_json::to_string(&parsed).unwrap(),
+            )
+            .unwrap();
+
+            fs::write(
+                &book_directory_path.join("ruby-txt_rendered.json"),
+                serde_json::to_string(&rendered).unwrap(),
+            )
+            .unwrap();
+        }
+
+        Ok(())
+    }
 }
 
 fn main() -> Result<()> {
@@ -51,19 +121,12 @@ fn main() -> Result<()> {
         aozorabunko_path.display()
     );
 
-    let output_path = PathBuf::from(&args.output_path);
-
-    // create output directory
-    // it fails if output directory already exists, expect for "./build"
-    if output_path.exists() {
-        if output_path == PathBuf::from("./build") {
-            fs::remove_dir_all(&output_path).unwrap();
-        } else {
-            bail!("Already exists: {}", &args.output_path);
-        }
-    }
-    fs::create_dir(&output_path)
-        .with_context(|| format!("Failed to create output directory: {}", &args.output_path))?;
+    let out = if let Some(output_path) = &args.output_path {
+        BuildOut::init_file(&output_path)
+            .with_context(|| format!("Failed to output directory: {}", &output_path))?
+    } else {
+        BuildOut::Null
+    };
 
     println!("Processing list_person_all_extended...");
 
@@ -78,24 +141,9 @@ fn main() -> Result<()> {
         parse_list_person_all_extended_csv(&csv_data)?
     };
 
-    fs::write(
-        &output_path.join("books.json"),
-        serde_json::to_string(&aozorabunko_index_list.books)?,
-    )?;
-
-    fs::write(
-        &output_path.join("authors.json"),
-        serde_json::to_string(&aozorabunko_index_list.authors)?,
-    )?;
-
-    fs::write(
-        &output_path.join("book_authors.json"),
-        serde_json::to_string(&aozorabunko_index_list.book_authors)?,
-    )?;
+    out.save_aozorabunko_index_list(&aozorabunko_index_list)?;
 
     println!("Finished.");
-
-    let book_root_path = &output_path.join("book");
 
     println!("Processing cards...");
 
@@ -122,9 +170,6 @@ fn main() -> Result<()> {
         if book_ids_with_copyright.contains(&book.id) {
             continue;
         }
-
-        let book_directory_path = book_root_path.join(book.id.to_string());
-        fs::create_dir_all(&book_directory_path).unwrap();
 
         // .txt
         if let Some(txt_url) = &book.txt_url {
@@ -160,19 +205,11 @@ fn main() -> Result<()> {
 
                     if is_supported_to_parse(&book.id) {
                         let parsed = parse_ruby_txt(&tokens).context("Failed to parse")?;
-                        fs::write(
-                            &book_directory_path.join("ruby-txt_parsed.json"),
-                            serde_json::to_string(&parsed).unwrap(),
-                        )
-                        .unwrap();
 
                         if is_supported_to_render(&book.id) {
                             let rendered = render_ruby_txt(&parsed).context("Failed to render")?;
-                            fs::write(
-                                &book_directory_path.join("ruby-txt_rendered.json"),
-                                serde_json::to_string(&rendered).unwrap(),
-                            )
-                            .unwrap();
+
+                            out.save_book_ruby_txt(book.id, &parsed, &rendered)?;
                         }
                     }
                 }

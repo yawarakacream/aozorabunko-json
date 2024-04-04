@@ -14,7 +14,7 @@
 ## 実行
 
 1. [青空文庫のリポジトリ](https://github.com/aozorabunko/aozorabunko) を clone する
-2. `$ cargo run <青空文庫のリポジトリへのパス> <出力先パス>`
+2. `$ cargo run <青空文庫のリポジトリへのパス> [出力先パス]`
 
 ## 対応状況
 
