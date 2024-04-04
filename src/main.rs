@@ -10,7 +10,7 @@ use std::{
 use aozorabunko_json::{
     list_person_all_extended_csv::parser::parse_list_person_all_extended_csv,
     ruby_txt::{parser::parse_ruby_txt, renderer::render_ruby_txt, tokenizer::tokenize_ruby_txt},
-    utility::ZipReader,
+    utility::zip::ZipReader,
 };
 
 struct Args {

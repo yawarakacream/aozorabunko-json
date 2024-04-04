@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ruby_txt::parser::{ParsedRubyTxt, ParsedRubyTxtElement},
-    utility::CharType,
+    utility::str::CharType,
 };
 
 use super::tokenizer::RubyTxtToken;

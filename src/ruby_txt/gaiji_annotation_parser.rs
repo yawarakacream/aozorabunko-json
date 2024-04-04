@@ -3,8 +3,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{
-    jis_x_0213,
     ruby_txt::{block_parser::parse_block, parser::ParsedRubyTxtElement, tokenizer::RubyTxtToken},
+    utility::jis_x_0213::JIS_X_0213,
 };
 
 pub(super) enum ParsedGaijiAnnotation {
@@ -95,7 +95,7 @@ pub(super) fn parse_gaiji_annotation<'a>(
             .as_str()
             .parse()
             .context("Invalid cell")?;
-        let char = jis_x_0213::JIS_X_0213.get(&(plane, row, cell));
+        let char = JIS_X_0213.get(&(plane, row, cell));
 
         if let Some(char) = char {
             return Ok((tokens, ParsedGaijiAnnotation::String(char.clone())));

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{bail, ensure, Context, Result};
 use serde::Serialize;
 
-use crate::utility::Date;
+use crate::utility::date::Date;
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -12,7 +12,7 @@ use crate::{
             StringDecorationStyle,
         },
     },
-    utility::parse_number,
+    utility::str::parse_number,
 };
 
 // AnnotationStart ... AnnotationEnd

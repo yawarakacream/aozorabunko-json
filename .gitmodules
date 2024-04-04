@@ -1,3 +1,3 @@
-[submodule "src/JIS_X_0213.json"]
-	path = src/JIS_X_0213.json
+[submodule "src/utility/JIS_X_0213.json"]
+	path = src/utility/JIS_X_0213.json
 	url = https://gist.github.com/yawarakacream/25df40fb5be925f907e39b4899bc1943
