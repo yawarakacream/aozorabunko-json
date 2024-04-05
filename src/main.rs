@@ -47,6 +47,7 @@ fn get_args() -> Result<Args> {
     })
 }
 
+// bad practice?
 enum BuildOut {
     Null,
     File { root: PathBuf },
