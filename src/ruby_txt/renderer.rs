@@ -2,11 +2,13 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ruby_txt::parser::{ParsedRubyTxt, ParsedRubyTxtElement},
+    ruby_txt::{
+        parser::{ParsedRubyTxt, ParsedRubyTxtElement},
+        tokenizer::RubyTxtToken,
+        utility::{MidashiLevel, MidashiStyle},
+    },
     utility::str::CharType,
 };
-
-use super::tokenizer::RubyTxtToken;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,18 +35,18 @@ pub fn render_ruby_txt(parsed: &ParsedRubyTxt) -> Result<RenderedRubyTxt> {
 #[serde(rename_all = "kebab-case")]
 pub enum PageStyle {
     Continuous,
-    Kaicho,      // 改丁
-    Kaipage,     // 改ページ
-    Kaimihiraki, // 改見開き
-    Kaidan,      // 改段
+    Kaicho { center: bool },  // 改丁
+    Kaipage { center: bool }, // 改ページ
+    Kaimihiraki,              // 改見開き
+    Kaidan { center: bool },  // 改段
 }
 
 // 字下げ
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Jisage {
-    level0: usize, // 最初の行
-    level1: usize, // 残りの行
+    level0: usize, // 1 行目
+    level1: usize, // 2 行目以降
 }
 
 // 地寄せ
@@ -101,7 +103,7 @@ impl RenderedRubyTxtLine {
     }
 
     fn set_page_style(&mut self, page_style: PageStyle) -> Result<()> {
-        ensure!(self.is_empty(), "Cannot set pasing to non-empty line");
+        ensure!(self.is_empty(), "Cannot set page-style to non-empty line");
         ensure!(
             self.page_style == PageStyle::Continuous,
             "page-style already set: {:?}, given {:?}",
@@ -140,7 +142,25 @@ impl RenderedRubyTxtLine {
     }
 
     fn is_empty(&self) -> bool {
-        self.components.is_empty()
+        self.components.is_empty() && self.jiyose.is_none()
+    }
+
+    // 空行かどうか
+    // ただし空白は許す
+    fn is_blank(&self, check_jiyose: bool) -> bool {
+        for c in &self.components {
+            for c in c.text().chars() {
+                if c != '　' {
+                    return false;
+                }
+            }
+        }
+
+        if check_jiyose && self.jiyose.is_some() {
+            return false;
+        }
+
+        true
     }
 
     fn push(&mut self, component: RenderedRubyTxtComponent) {
@@ -153,7 +173,7 @@ impl RenderedRubyTxtLine {
 
     fn push_str(&mut self, string: &str) {
         if let Some(RenderedRubyTxtComponent::String { value }) = self.components.last_mut() {
-            value.push_str(string)
+            value.push_str(string);
         } else {
             self.components.push(RenderedRubyTxtComponent::String {
                 value: string.to_string(),
@@ -164,6 +184,66 @@ impl RenderedRubyTxtLine {
     fn pop(&mut self) -> Option<RenderedRubyTxtComponent> {
         self.components.pop()
     }
+
+    // この行の text が string で終わるならば、その要素を抜き出す
+    fn pop_last_string(&mut self, string: &str) -> Result<Vec<RenderedRubyTxtComponent>> {
+        let mut ret = Vec::new();
+
+        let mut left = string;
+        while let Some(last) = self.components.pop() {
+            let last_text = last.text();
+
+            if last_text.len() < left.len() {
+                ensure!(
+                    left.ends_with(&last_text),
+                    r#"Cannot pop "{}": "{}", found "{}""#,
+                    &string,
+                    &left,
+                    &last_text
+                );
+                left = &left[..(left.len() - last_text.len())];
+                ret.push(last);
+                continue;
+            } else if last_text.len() > left.len() {
+                match &last {
+                    RenderedRubyTxtComponent::String { value } => {
+                        ensure!(
+                            value.ends_with(&left),
+                            r#"Cannot pop "{}": "{}", found "{}""#,
+                            &string,
+                            &left,
+                            &last_text
+                        );
+                        self.push(RenderedRubyTxtComponent::String {
+                            value: value[..(value.len() - left.len())].to_string(),
+                        });
+                        ret.push(RenderedRubyTxtComponent::String {
+                            value: left.to_string(),
+                        });
+                    }
+
+                    _ => {
+                        bail!("Cannot split to pop: {:?}", last);
+                    }
+                }
+            } else {
+                assert!(last_text.len() == left.len());
+                ensure!(
+                    left == &last_text,
+                    r#"Cannot pop "{}": "{}", found "{}""#,
+                    &string,
+                    &left,
+                    &last_text
+                );
+                ret.push(last);
+            }
+
+            ret.reverse();
+            return Ok(ret);
+        }
+
+        bail!("Cannot pop {:?}: Not found in {:?}", &string, &self);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,7 +253,6 @@ pub enum RenderedRubyTxtComponent {
         value: String,
     },
     UnknownAnnotation {
-        // 非空
         args: Vec<RenderedRubyTxtComponent>,
     },
 
@@ -182,9 +261,33 @@ pub enum RenderedRubyTxtComponent {
         children: Vec<RenderedRubyTxtComponent>,
     },
 
+    Midashi {
+        level: MidashiLevel,
+        style: MidashiStyle,
+        children: Vec<RenderedRubyTxtComponent>,
+    },
+
     Tmp {
         data: ParsedRubyTxtElement,
     },
+}
+
+impl RenderedRubyTxtComponent {
+    fn text(&self) -> String {
+        match &self {
+            &Self::String { value } => value.clone(),
+            &Self::UnknownAnnotation { args: _ } => "".to_owned(),
+            &Self::Ruby { ruby: _, children } => {
+                children.iter().map(|c| c.text()).collect::<String>()
+            }
+            &Self::Midashi {
+                level: _,
+                style: _,
+                children,
+            } => children.iter().map(|c| c.text()).collect::<String>(),
+            &Self::Tmp { data: _ } => "".to_owned(),
+        }
+    }
 }
 
 // 注記などを基に、描画するに適切な構造を求める
@@ -332,7 +435,7 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 lines
                     .last_mut()
                     .unwrap()
-                    .set_page_style(PageStyle::Kaicho)?;
+                    .set_page_style(PageStyle::Kaicho { center: false })?;
             }
 
             ParsedRubyTxtElement::KaipageAttention => {
@@ -350,7 +453,7 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 lines
                     .last_mut()
                     .unwrap()
-                    .set_page_style(PageStyle::Kaipage)?;
+                    .set_page_style(PageStyle::Kaipage { center: false })?;
             }
 
             ParsedRubyTxtElement::KaimihirakiAttention => {
@@ -386,29 +489,17 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 lines
                     .last_mut()
                     .unwrap()
-                    .set_page_style(PageStyle::Kaidan)?;
+                    .set_page_style(PageStyle::Kaidan { center: false })?;
             }
 
             ParsedRubyTxtElement::JisageAnnotation { level } => {
                 elements = &elements[1..];
 
-                ensure!(lines.pop().unwrap().is_empty(), "Invalid one-line jisage");
+                let line = lines.last_mut().unwrap();
+                ensure!(line.is_blank(false), "Invalid one-line jisage");
 
-                let jisage = if let Some(global_jisage) = &global_jisage {
-                    Jisage {
-                        level0: *level + global_jisage.level0,
-                        level1: *level + global_jisage.level1,
-                    }
-                } else {
-                    Jisage {
-                        level0: *level,
-                        level1: *level,
-                    }
-                };
-
-                let mut line = RenderedRubyTxtLine::new();
-                line.set_jisage(jisage)?;
-                lines.push(line);
+                line.jisage.level0 += *level;
+                line.jisage.level1 += *level;
             }
 
             ParsedRubyTxtElement::JisageStartAnnotation { level } => {
@@ -510,7 +601,7 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                     .collect();
                 lines.last_mut().unwrap().set_jiyose(Jiyose {
                     level: 0,
-                    lines: jitsuki_lines?,
+                    lines: jitsuki_lines.context("Failed to render children of jitsuki block")?,
                 })?;
             }
 
@@ -569,7 +660,9 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
 
                 // 地寄せブロックは 1 行につき 1 行
                 for jiyose_line in render_block(&jiyose_elements)? {
-                    let jiyose_line = jiyose_line.extract_components()?;
+                    let jiyose_line = jiyose_line
+                        .extract_components()
+                        .context("Failed to render children of jiyose block")?;
 
                     let mut line = RenderedRubyTxtLine::new();
                     line.set_jiyose(Jiyose {
@@ -583,6 +676,31 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
             ParsedRubyTxtElement::JiyoseEndAnnotation => {
                 // 規格外の注記で地寄せが始まっている可能性があるのでエラーにしない
                 elements = &elements[1..];
+            }
+
+            ParsedRubyTxtElement::Midashi {
+                value,
+                level,
+                style,
+            } => {
+                elements = &elements[1..];
+                let line = lines.last_mut().unwrap();
+                let children = line.pop_last_string(value)?;
+
+                if style == &MidashiStyle::Normal {
+                    ensure!(
+                        line.is_blank(false),
+                        r#"Invalid normal midashi: "{}" for {:?}"#,
+                        value,
+                        line
+                    );
+                }
+
+                line.push(RenderedRubyTxtComponent::Midashi {
+                    level: level.clone(),
+                    style: style.clone(),
+                    children,
+                });
             }
 
             _ => {
@@ -611,8 +729,19 @@ fn render_line_components(
     elements: &[&ParsedRubyTxtElement],
 ) -> Result<Vec<RenderedRubyTxtComponent>> {
     let lines = render_block(elements)?;
-    ensure!(!lines.is_empty(), "Empty block");
-    ensure!(lines.len() == 1, "Not line");
+    ensure!(
+        !lines.is_empty(),
+        "Failed to render one-line components: Empty block"
+    );
+    ensure!(
+        lines.len() == 1,
+        "Failed to render one-line components: Multiple lines"
+    );
 
-    lines.into_iter().nth(0).unwrap().extract_components()
+    lines
+        .into_iter()
+        .nth(0)
+        .unwrap()
+        .extract_components()
+        .context("Failed to render one-line components: Failed to extract")
 }
