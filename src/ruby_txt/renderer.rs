@@ -678,6 +678,35 @@ pub fn render_block(elements: &[&ParsedRubyTxtElement]) -> Result<Vec<RenderedRu
                 elements = &elements[1..];
             }
 
+            ParsedRubyTxtElement::PageCenterAnnotation => {
+                elements = &elements[1..];
+                ensure!(!elements.is_empty(), "Empty centering page");
+                if elements.is_empty() {
+                    continue;
+                }
+
+                ensure!(
+                    matches!(elements[0], ParsedRubyTxtElement::NewLine),
+                    "Invalid centering"
+                );
+                elements = &elements[1..];
+
+                let line0 = lines.pop().unwrap();
+                ensure!(line0.is_blank(true), "Cannot centering page");
+
+                let page_style_1 = match line0.page_style {
+                    PageStyle::Continuous => PageStyle::Kaipage { center: true },
+                    PageStyle::Kaicho { center: _ } => PageStyle::Kaicho { center: true },
+                    PageStyle::Kaipage { center: _ } => PageStyle::Kaipage { center: true },
+                    PageStyle::Kaidan { center: _ } => PageStyle::Kaidan { center: true },
+                    _ => bail!("Invalid centering page"),
+                };
+
+                let mut line1 = RenderedRubyTxtLine::new();
+                line1.set_page_style(page_style_1)?;
+                lines.push(line1);
+            }
+
             ParsedRubyTxtElement::Midashi {
                 value,
                 level,
