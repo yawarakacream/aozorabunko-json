@@ -96,10 +96,7 @@ pub enum ParsedRubyTxtElement {
         level: MidashiLevel,
         style: MidashiStyle,
     },
-    MidashiEnd {
-        level: MidashiLevel,
-        style: MidashiStyle,
-    },
+    MidashiEnd, // level, style は必須のはずだが、書いていない場合がある
 
     // 返り点
     Kaeriten {

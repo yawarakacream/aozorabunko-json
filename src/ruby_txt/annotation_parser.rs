@@ -307,22 +307,13 @@ pub(super) fn parse_annotation<'a>(
         }
 
         static REGEX_MIDASHI: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"^「(?P<value>.+)」は(?P<style>.?.?)(?P<level>.)見出し$").unwrap()
+            Regex::new(r"^「(?P<value>.+)」は(?P<style>同行|窓)?(?P<level>大|中|小)見出し$")
+                .unwrap()
         });
         if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
             let value = caps.name("value").unwrap().as_str().to_owned();
-            let style = match caps.name("style").unwrap().as_str() {
-                "" => MidashiStyle::Normal,
-                "同行" => MidashiStyle::Dogyo,
-                "窓" => MidashiStyle::Mado,
-                x => bail!("Unknown midashi style: {:?}", x),
-            };
-            let level = match caps.name("level").unwrap().as_str() {
-                "大" => MidashiLevel::Oh,
-                "中" => MidashiLevel::Naka,
-                "小" => MidashiLevel::Ko,
-                x => bail!("Unknown midashi level: {:?}", x),
-            };
+            let style = MidashiStyle::of(caps.name("style").map_or("", |m| m.as_str()))?;
+            let level = MidashiLevel::of(caps.name("level").unwrap().as_str())?;
             return Ok(Some(ParsedRubyTxtElement::Midashi {
                 value,
                 style,
@@ -330,31 +321,19 @@ pub(super) fn parse_annotation<'a>(
             }));
         }
 
-        static REGEX_MIDASHI_START: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(ここから)?(?P<style>.?.?)(?P<level>.)見出し$").unwrap());
-        if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
-            let style = match caps.name("style").unwrap().as_str() {
-                "" => MidashiStyle::Normal,
-                "同行" => MidashiStyle::Dogyo,
-                "窓" => MidashiStyle::Mado,
-                x => bail!("Unknown midashi style: {:?}", x),
-            };
-            let level = match caps.name("level").unwrap().as_str() {
-                "大" => MidashiLevel::Oh,
-                "中" => MidashiLevel::Naka,
-                "小" => MidashiLevel::Ko,
-                x => bail!("Unknown midashi level: {:?}", x),
-            };
+        static REGEX_MIDASHI_START: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(ここから)?(?P<style>同行|窓)?(?P<level>大|中|小)見出し$").unwrap()
+        });
+        if let Some(caps) = REGEX_MIDASHI_START.captures(&arg) {
+            let style = MidashiStyle::of(caps.name("style").map_or("", |m| m.as_str()))?;
+            let level = MidashiLevel::of(caps.name("level").unwrap().as_str())?;
             return Ok(Some(ParsedRubyTxtElement::MidashiStart { level, style }));
         }
 
-        static REGEX_MIDASHI_END: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"^(ここで)?(?P<style>.?.?)(?P<level>.)見出し終わり$").unwrap()
-        });
-        if let Some(caps) = REGEX_MIDASHI.captures(&arg) {
-            let style = MidashiStyle::of(caps.name("style").unwrap().as_str())?;
-            let level = MidashiLevel::of(caps.name("level").unwrap().as_str())?;
-            return Ok(Some(ParsedRubyTxtElement::MidashiStart { level, style }));
+        static REGEX_MIDASHI_END: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^.*見出し終わり$").unwrap());
+        if REGEX_MIDASHI_END.is_match(&arg) {
+            return Ok(Some(ParsedRubyTxtElement::MidashiEnd));
         }
 
         static REGEX_KAERITEN: Lazy<Regex> = Lazy::new(|| {
